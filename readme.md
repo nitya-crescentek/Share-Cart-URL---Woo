@@ -1,0 +1,3 @@
+## Share Cart URL for WooCommerce
+
+<p>Share Cart URL for WooCommerce enables customers to share their cart URL directly from the WooCommerce cart page. This plugin integrates seamlessly with WooCommerce by adding a dedicated settings tab where you can configure the position of the share cart button. It is designed to facilitate collaborative shopping experiences, gift planning, and social sharing by allowing customers to easily share their cart details.</p>
