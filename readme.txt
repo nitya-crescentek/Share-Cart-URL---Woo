@@ -4,7 +4,7 @@ Donate link: https://buymeacoffee.com/nityasaha
 Tags: woocommerce, cart, share, shopping cart, share-cart
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.2
+Stable tag: 1.3
 Requires PHP: 7.4
 Requires plugins: woocommerce
 License: GPLv2 or later
@@ -61,17 +61,21 @@ In today's social shopping environment, customers want to share their finds with
 Navigate to WooCommerce > Settings > Share Cart to access:
 
 * Button Position - Select from multiple WooCommerce cart hooks
+* Button Text - Change the button label without writing any code
 * Button Display - Control when and where the share button appears
 * Easy Customization - Style the button with custom CSS
 
 Available button positions include:
 * Before Cart Table
-* After Cart Table
+* Before Cart Contents
+* After Cart
 * Before Cart Totals
 * After Cart Totals
-* Cart Collaterals
-* Before Cart Contents
-* After Cart Contents
+* Proceed to Checkout
+* Cart Totals Before / After Order Total
+* Cart Totals After Shipping
+* Cart Coupon
+* Hide (use the shortcode instead)
 
 = Privacy & Security =
 
@@ -130,7 +134,7 @@ Share Cart for WooCommerce is designed to work with any WooCommerce-compatible t
 
 = Will shared carts expire? =
 
-Currently, shared cart URLs do not expire. Recipients can use the link at any time to load the cart contents.
+Shared cart URLs do not expire on a fixed schedule. They are stored in the server temporary directory, which some hosting environments clear periodically, so very old links may stop working. Configurable expiry and dedicated storage are planned for a future release.
 
 = Can recipients modify the shared cart? =
 
@@ -163,6 +167,24 @@ For support, please use the WordPress.org support forum for this plugin. We moni
 
 == Changelog ==
 
+= 1.3 =
+* Security: removed an unused cart price override code path that allowed the submitted cart form to change product prices. All users should update.
+* Security: shared cart data is now restored without instantiating objects, and the share key is strictly validated before any file is read.
+* Fixed: copying the share link now works on iPhone, iPad and Safari on macOS. The link is prepared in advance so the copy happens inside the click itself, which is what Safari requires.
+* Fixed: the success message is now only shown when the link was genuinely copied. Previously it appeared even when the copy had failed.
+* Added: the link is always shown in a selectable field with its own Copy button, so it can be copied manually if the browser blocks clipboard access.
+* Added: native share sheet support on mobile devices via the Web Share API.
+* Added: Button Text setting to change the button label from WooCommerce settings.
+* Added: declared compatibility with WooCommerce High Performance Order Storage (HPOS).
+* Fixed: the share button is no longer displayed when the cart is empty.
+* Fixed: the shortcode now renders in place instead of being pushed to the top of the content.
+* Fixed: the Use Shortcode heading no longer appears above the Button Position field on the settings screen.
+* Fixed: share links were malformed on sites using plain permalinks.
+* Fixed: WooCommerce is now detected correctly when it is network activated on multisite.
+* Improved: button text and all on screen messages are now translatable.
+* Improved: the share button no longer submits the cart form when JavaScript is unavailable.
+* Compatibility with WordPress 7.1 and current WooCommerce releases.
+
 = 1.2 =
 * Compatibility with 6.9
 * Fixed issue: link generation on iPhones
@@ -185,6 +207,9 @@ For support, please use the WordPress.org support forum for this plugin. We moni
 * Translation-ready code
 
 == Upgrade Notice ==
+
+= 1.3 =
+Important security update. Also fixes copying the share link on iPhone, iPad and Safari. Update is strongly recommended for all users.
 
 = 1.1 =
 compatibility and enhanced documentation and improved user guidance. Recommended update for all users.

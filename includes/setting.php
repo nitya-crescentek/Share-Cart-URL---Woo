@@ -9,7 +9,7 @@ if ( ! class_exists( 'SCURL_Settings' ) ) {
 
         public function __construct() {
             // Only initialize in the admin area when WooCommerce is active.
-            if ( is_admin() && in_array( 'woocommerce/woocommerce.php', apply_filters( 'active_plugins', get_option( 'active_plugins' ) ) ) ) {
+            if ( is_admin() && scurl_is_woocommerce_active() ) {
                 add_filter( 'woocommerce_settings_tabs_array', array( $this, 'add_settings_tab' ), 50 );
                 add_action( 'woocommerce_settings_tabs_share_cart_url', array( $this, 'settings_tab_content' ) );
                 add_action( 'woocommerce_update_options_share_cart_url', array( $this, 'update_settings' ) );
@@ -44,6 +44,10 @@ if ( ! class_exists( 'SCURL_Settings' ) ) {
         /**
          * Define the settings fields.
          *
+         * Each 'title' must be closed by its own 'sectionend'. Without that, the
+         * second heading is emitted inside the still open table and the browser
+         * moves it above the fields.
+         *
          * @return array
          */
         public function get_settings() {
@@ -51,7 +55,7 @@ if ( ! class_exists( 'SCURL_Settings' ) ) {
                 'section_title' => array(
                     'name' => esc_html__( 'Share Cart Button Settings', 'share-cart-for-woocommerce' ),
                     'type' => 'title',
-                    'desc' => esc_html__( 'Configure the position of the share cart button on the cart page.', 'share-cart-for-woocommerce' ),
+                    'desc' => esc_html__( 'Configure the share cart button shown on the cart page.', 'share-cart-for-woocommerce' ),
                     'id'   => 'scurl_settings_section_title'
                 ),
                 'button_position' => array(
@@ -73,6 +77,19 @@ if ( ! class_exists( 'SCURL_Settings' ) ) {
                     'desc'    => esc_html__( 'Select the hook position where the share cart button will appear on the cart page.', 'share-cart-for-woocommerce' ),
                     'id'      => 'scurl_button_position'
                 ),
+                'button_text' => array(
+                    'name'        => esc_html__( 'Button Text', 'share-cart-for-woocommerce' ),
+                    'type'        => 'text',
+                    'placeholder' => esc_attr__( 'Share this cart', 'share-cart-for-woocommerce' ),
+                    'desc'        => esc_html__( 'Label for the share button. Leave empty to use the default.', 'share-cart-for-woocommerce' ),
+                    'desc_tip'    => true,
+                    'default'     => '',
+                    'id'          => 'scurl_button_text'
+                ),
+                'section_end' => array(
+                    'type' => 'sectionend',
+                    'id'   => 'scurl_settings_section_end'
+                ),
                 'shortcode_info' => array(
                     'name' => esc_html__( 'Use Shortcode', 'share-cart-for-woocommerce' ),
                     'type' => 'title',
@@ -83,9 +100,9 @@ if ( ! class_exists( 'SCURL_Settings' ) ) {
                     ),
                     'id'   => 'scurl_shortcode_info'
                 ),
-                'section_end' => array(
+                'shortcode_end' => array(
                     'type' => 'sectionend',
-                    'id'   => 'scurl_settings_section_end'
+                    'id'   => 'scurl_shortcode_section_end'
                 )
             );
             return $settings;

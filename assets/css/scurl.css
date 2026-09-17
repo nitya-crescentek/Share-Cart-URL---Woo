@@ -1,7 +1,54 @@
-#share-cart-url{
-    font-size: 16px;
+.scurl-share-cart {
+    margin-bottom: 15px;
 }
 
-#share-cart-btn{
+#share-cart-btn,
+.scurl-share-btn {
     margin-bottom: 10px;
+}
+
+#share-cart-url,
+.scurl-share-output {
+    font-size: 16px;
+    background: rgb(241, 241, 241);
+    padding: 0.6em 1em;
+    margin-bottom: 15px;
+}
+
+.scurl-share-output[hidden] {
+    display: none;
+}
+
+.scurl-share-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.scurl-share-input {
+    flex: 1 1 220px;
+    min-width: 0;
+    /* 16px or larger keeps iOS from zooming the page when the field is focused. */
+    font-size: 16px;
+    padding: 0.4em 0.6em;
+}
+
+.scurl-share-row .button {
+    flex: 0 0 auto;
+    margin: 0;
+}
+
+.scurl-native-share-btn[hidden] {
+    display: none;
+}
+
+.scurl-share-feedback {
+    display: block;
+    margin-top: 8px;
+    font-size: 14px;
+}
+
+.scurl-share-feedback:empty {
+    display: none;
 }
