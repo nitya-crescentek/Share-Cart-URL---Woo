@@ -4,3 +4,10 @@
 
 <br>
 <img width="754" alt="image" src="https://github.com/user-attachments/assets/472edf13-6d48-4f30-921b-084fbe3e63f0" />
+
+
+Next - Plan
+
+1. Merge vs. replace on load - enable option in settings (default off)
+2. Email this cart to me
+3. Save cart urls for everyone - save urls with a name
