@@ -11,45 +11,103 @@ jQuery(function ($) {
     var i18n = (window.share_cart_ajax && share_cart_ajax.i18n) || {};
 
     /**
-     * Legacy copy path for browsers without the async clipboard API, or for
-     * pages served over plain HTTP where it is unavailable.
+     * Detect iOS, including iPadOS which reports itself as a Mac.
      *
-     * @param {string} text
-     * @return {boolean} Whether the copy actually succeeded.
+     * @return {boolean}
      */
-    function legacyCopy(text) {
-        var textarea = document.createElement('textarea');
-        var succeeded = false;
+    function isIOS() {
+        return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    }
 
-        textarea.value = text;
-        textarea.setAttribute('readonly', '');
-        textarea.style.position = 'absolute';
-        textarea.style.left = '-9999px';
-        textarea.style.top = (window.pageYOffset || document.documentElement.scrollTop) + 'px';
-        // 16px or larger stops iOS from zooming when the field is focused.
-        textarea.style.fontSize = '16px';
-        textarea.style.padding = '0';
-        textarea.style.border = '0';
-        textarea.style.margin = '0';
+    /**
+     * Select the whole value of a text field.
+     *
+     * iOS refuses to select a readonly field, and needs the value exposed as
+     * editable content before a range will take. Every other browser just needs
+     * the field focused, and the range dance actively breaks it there, because
+     * a field's value is not a child node.
+     *
+     * @param {HTMLInputElement|HTMLTextAreaElement} el
+     */
+    function selectField(el) {
+        if (isIOS()) {
+            var wasReadOnly = el.readOnly;
+            var wasEditable = el.contentEditable;
 
-        document.body.appendChild(textarea);
+            el.contentEditable = 'true';
+            el.readOnly = false;
 
-        try {
-            // iOS ignores select() on its own and needs an explicit range.
             var range = document.createRange();
-            range.selectNodeContents(textarea);
+            range.selectNodeContents(el);
 
             var selection = window.getSelection();
             selection.removeAllRanges();
             selection.addRange(range);
 
-            textarea.setSelectionRange(0, textarea.value.length);
+            el.setSelectionRange(0, 999999);
+
+            el.contentEditable = wasEditable;
+            el.readOnly = wasReadOnly;
+            return;
+        }
+
+        try {
+            el.focus({ preventScroll: true });
+        } catch (e) {
+            el.focus();
+        }
+
+        el.select();
+
+        try {
+            el.setSelectionRange(0, el.value.length);
+        } catch (e) {}
+    }
+
+    /**
+     * Legacy copy path, used when the async clipboard API is unavailable. That
+     * includes every page served over plain HTTP, where isSecureContext is false.
+     *
+     * @param {string} text
+     * @param {HTMLInputElement} [field] Visible field holding the same text.
+     * @return {boolean} Whether the copy actually succeeded.
+     */
+    function legacyCopy(text, field) {
+        var el = field;
+        var temporary = false;
+        var succeeded = false;
+
+        // Prefer the field already on screen. A detached or off-screen element
+        // is refused by some browsers, and cannot be selected on iOS at all.
+        if (!el || el.value !== text) {
+            el = document.createElement('textarea');
+            el.value = text;
+            el.setAttribute('readonly', '');
+            el.style.position = 'fixed';
+            el.style.top = '0';
+            el.style.left = '0';
+            el.style.width = '1px';
+            el.style.height = '1px';
+            el.style.padding = '0';
+            el.style.border = '0';
+            el.style.margin = '0';
+            // 16px or larger stops iOS from zooming when the field is focused.
+            el.style.fontSize = '16px';
+            document.body.appendChild(el);
+            temporary = true;
+        }
+
+        try {
+            selectField(el);
             succeeded = document.execCommand('copy');
         } catch (e) {
             succeeded = false;
         }
 
-        document.body.removeChild(textarea);
+        if (temporary) {
+            document.body.removeChild(el);
+        }
 
         return succeeded;
     }
@@ -59,39 +117,39 @@ jQuery(function ($) {
      * gesture, otherwise Safari rejects it.
      *
      * @param {string} text
+     * @param {HTMLInputElement} [field] Visible field holding the same text.
      * @return {Promise}
      */
-    function copyToClipboard(text) {
+    function copyToClipboard(text, field) {
         if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
-            return navigator.clipboard.writeText(text);
+            return navigator.clipboard.writeText(text).catch(function () {
+                // Permission denied or a blocked context. Try the old way before
+                // giving up, while the gesture is still live.
+                return legacyCopy(text, field) ? Promise.resolve() : Promise.reject();
+            });
         }
 
-        return legacyCopy(text) ? Promise.resolve() : Promise.reject();
+        return legacyCopy(text, field) ? Promise.resolve() : Promise.reject();
     }
 
     /**
-     * Reveal the link panel and report the outcome of the copy.
+     * Report the outcome of the copy.
      *
      * @param {jQuery} $widget
      * @param {boolean} copied
      */
     function showResult($widget, copied) {
-        var $output = $widget.find('.scurl-share-output');
-        var $input = $widget.find('.scurl-share-input');
-
-        $output.prop('hidden', false);
         $widget.find('.scurl-share-feedback').text(copied ? i18n.copied : i18n.copy_failed);
 
-        if (navigator.share) {
-            $widget.find('.scurl-native-share-btn').prop('hidden', false);
-        }
+        // When the copy failed, leave the link selected so it can be copied by hand.
+        if (!copied) {
+            var field = $widget.find('.scurl-share-input')[0];
 
-        // When the copy failed, pre-select the link so it can be copied by hand.
-        if (!copied && $input.length) {
-            try {
-                $input.trigger('focus');
-                $input[0].setSelectionRange(0, $input.val().length);
-            } catch (e) {}
+            if (field) {
+                try {
+                    selectField(field);
+                } catch (e) {}
+            }
         }
     }
 
@@ -101,14 +159,26 @@ jQuery(function ($) {
      * @param {jQuery} $widget
      */
     function handleCopy($widget) {
-        var url = $widget.data('share-url');
+        // Read the attribute directly. jQuery's .data() caches its first read,
+        // which would go stale after the cart is updated.
+        var url = $widget.attr('data-share-url');
 
         if (!url) {
             return;
         }
 
+        // Reveal the panel synchronously, so the field is on screen and
+        // selectable before the copy runs.
+        $widget.find('.scurl-share-output').prop('hidden', false);
+
+        if (navigator.share) {
+            $widget.find('.scurl-native-share-btn').prop('hidden', false);
+        }
+
+        var field = $widget.find('.scurl-share-input')[0];
+
         // Called synchronously here, while the click gesture is still active.
-        copyToClipboard(url).then(function () {
+        copyToClipboard(url, field).then(function () {
             showResult($widget, true);
         }).catch(function () {
             showResult($widget, false);
@@ -125,7 +195,7 @@ jQuery(function ($) {
         e.preventDefault();
 
         var $widget = $(this).closest('.scurl-share-cart');
-        var url = $widget.data('share-url');
+        var url = $widget.attr('data-share-url');
 
         if (!navigator.share || !url) {
             return;
@@ -171,7 +241,6 @@ jQuery(function ($) {
             if (response && response.success && response.data.url) {
                 $('.scurl-share-cart')
                     .attr('data-share-url', response.data.url)
-                    .data('share-url', response.data.url)
                     .find('.scurl-share-input').val(response.data.url);
             }
         });
