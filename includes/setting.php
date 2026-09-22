@@ -75,6 +75,16 @@ if ( ! class_exists( 'SCURL_Settings' ) ) {
          * @return array
          */
         public function get_settings() {
+            $position_desc = esc_html__( 'Select the hook position where the share cart button will appear on the cart page.', 'share-cart-for-woocommerce' );
+
+            // The Cart block is a React app and fires none of the classic cart
+            // hooks, so say what the positions actually do there.
+            $cart_page_id = function_exists( 'wc_get_page_id' ) ? wc_get_page_id( 'cart' ) : 0;
+
+            if ( $cart_page_id > 0 && has_block( 'woocommerce/cart', $cart_page_id ) ) {
+                $position_desc .= '<br />' . esc_html__( 'Your cart page uses the WooCommerce Cart block, which does not support the classic cart hooks. The first three positions place the button above the cart and the rest place it below. Use the shortcode if you need it somewhere else.', 'share-cart-for-woocommerce' );
+            }
+
             $settings = array(
                 'section_title' => array(
                     'name' => esc_html__( 'Share Cart Button Settings', 'share-cart-for-woocommerce' ),
@@ -98,7 +108,7 @@ if ( ! class_exists( 'SCURL_Settings' ) ) {
                         'woocommerce_cart_coupon'                    => esc_html__( 'Cart Coupon', 'share-cart-for-woocommerce' ),
                         'hide'                    => esc_html__( 'Hide', 'share-cart-for-woocommerce' ),
                     ),
-                    'desc'    => esc_html__( 'Select the hook position where the share cart button will appear on the cart page.', 'share-cart-for-woocommerce' ),
+                    'desc'    => $position_desc,
                     'id'      => 'scurl_button_position'
                 ),
                 'button_text' => array(

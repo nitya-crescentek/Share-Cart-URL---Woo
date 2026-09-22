@@ -185,6 +185,8 @@ For support, please use the WordPress.org support forum for this plugin. We moni
 * Improved: button text and all on screen messages are now translatable.
 * Improved: the share button no longer submits the cart form when JavaScript is unavailable.
 * Compatibility with WordPress 7.1 and current WooCommerce releases.
+* Fixed: the Button Position setting had no effect on cart pages built with the WooCommerce Cart block, because that block fires none of the classic cart hooks. The button is now placed above or below the block instead. Only the shortcode worked there before.
+* Fixed: the share link is now refreshed when the cart changes on a Cart block page, so a link copied after editing the cart matches what is in it.
 * Added: native share button for users, with enable and disable option. It is off by default.
 * Improved: the copy and share controls are now compact icon buttons that carry their own styling, so they stay consistent whatever the theme does to buttons.
 

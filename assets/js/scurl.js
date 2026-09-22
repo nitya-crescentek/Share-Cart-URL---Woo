@@ -219,7 +219,7 @@ jQuery(function ($) {
      * stale cart. Refresh it in the background; the markup keeps working with
      * its server rendered value if the request fails.
      */
-    $(document.body).on('updated_wc_div updated_cart_totals', function () {
+    function refreshShareUrls() {
         var $widgets = $('.scurl-share-cart');
 
         if (!$widgets.length) {
@@ -244,5 +244,88 @@ jQuery(function ($) {
                     .find('.scurl-share-input').val(response.data.url);
             }
         });
-    });
+    }
+
+    // Classic cart and mini cart fragments.
+    $(document.body).on('updated_wc_div updated_cart_totals', refreshShareUrls);
+
+    /**
+     * Build a value that changes whenever the shareable part of the block cart
+     * changes. Prices and shipping are left out, since they do not travel in
+     * the share link.
+     *
+     * @param {Object} cart Store API cart data.
+     * @return {string}
+     */
+    function cartSignature(cart) {
+        var items = (cart.items || []).map(function (item) {
+            return item.key + ':' + item.quantity;
+        }).join('|');
+
+        var coupons = (cart.coupons || []).map(function (coupon) {
+            return coupon.code;
+        }).join('|');
+
+        return items + '#' + coupons;
+    }
+
+    /**
+     * The Cart block never fires the jQuery events above, so watch its own data
+     * store instead. Returns false while the store is still unavailable, so the
+     * caller can try again once the block scripts have loaded.
+     *
+     * @return {boolean} Whether the watcher was attached.
+     */
+    function watchBlockCart() {
+        if (!window.wp || !wp.data || typeof wp.data.subscribe !== 'function') {
+            return false;
+        }
+
+        var store = wp.data.select('wc/store/cart');
+
+        if (!store || typeof store.getCartData !== 'function') {
+            return false;
+        }
+
+        var signature = null;
+
+        wp.data.subscribe(function () {
+            var cart = wp.data.select('wc/store/cart');
+
+            // Ignore the placeholder cart served before the first request
+            // resolves, otherwise the initial load looks like a change.
+            if (!cart.hasFinishedResolution('getCartData')) {
+                return;
+            }
+
+            var next = cartSignature(cart.getCartData());
+
+            if (signature === null) {
+                signature = next;
+                return;
+            }
+
+            if (next === signature) {
+                return;
+            }
+
+            signature = next;
+            refreshShareUrls();
+        });
+
+        return true;
+    }
+
+    if (!watchBlockCart()) {
+        // Our script and the block scripts both load in the footer, so the
+        // store may not be registered yet. Give it a few seconds, then stop.
+        var attempts = 0;
+        var timer = setInterval(function () {
+            attempts++;
+
+            if (watchBlockCart() || attempts > 20) {
+                clearInterval(timer);
+            }
+        }, 250);
+    }
 });

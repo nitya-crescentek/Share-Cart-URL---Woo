@@ -25,6 +25,28 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
          */
         private static $instance_count = 0;
 
+        /**
+         * Whether a classic cart hook already rendered the widget on this
+         * request. The Cart block fallback checks this so a page holding both
+         * the block and the classic cart does not get two copies.
+         *
+         * @var bool
+         */
+        private static $rendered_on_hook = false;
+
+        /**
+         * Positions that sit above the cart. Everything else in the setting
+         * renders below it. Used only by the Cart block fallback, where the
+         * fine grained classic positions have nowhere to attach.
+         *
+         * @var array
+         */
+        private static $positions_above_cart = array(
+            'woocommerce_before_cart_table',
+            'woocommerce_before_cart_contents',
+            'woocommerce_cart_coupon',
+        );
+
         public function __construct() {
             $this->init();
         }
@@ -35,6 +57,9 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
 
             if ( $position !== 'hide' ) {
                 add_action( $position, array( __CLASS__, 'scurl_render_share_cart_interface' ) );
+                // The Cart block does not fire any of the classic cart hooks, so
+                // the widget has to be attached to the block itself there.
+                add_filter( 'render_block', array( __CLASS__, 'scurl_render_in_cart_block' ), 10, 2 );
             }
             add_shortcode( 'share_cart_url', array( __CLASS__, 'scurl_shortcode' ) );
 
@@ -224,8 +249,59 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
          * Render the widget on a WooCommerce hook.
          */
         public static function scurl_render_share_cart_interface() {
+            $html = self::scurl_get_share_cart_html();
+
+            if ( '' === $html ) {
+                return;
+            }
+
+            self::$rendered_on_hook = true;
+
             // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in scurl_get_share_cart_html().
-            echo self::scurl_get_share_cart_html();
+            echo $html;
+        }
+
+        /**
+         * Render the widget alongside the WooCommerce Cart block.
+         *
+         * The block cart is a React app. None of the classic cart hooks
+         * (woocommerce_before_cart_table and friends) are fired by it, which is
+         * why the Button Position setting appeared to do nothing on a block
+         * cart while the shortcode kept working.
+         *
+         * The block's server output is only a placeholder skeleton that the
+         * script replaces on hydration, so anything injected inside it is
+         * discarded. The widget is placed around the block instead, above or
+         * below it according to the chosen position.
+         *
+         * @param string $block_content Rendered block HTML.
+         * @param array  $block         Parsed block.
+         * @return string
+         */
+        public static function scurl_render_in_cart_block( $block_content, $block ) {
+            if ( empty( $block['blockName'] ) || 'woocommerce/cart' !== $block['blockName'] ) {
+                return $block_content;
+            }
+
+            if ( self::$rendered_on_hook ) {
+                return $block_content;
+            }
+
+            $html = self::scurl_get_share_cart_html();
+
+            if ( '' === $html ) {
+                return $block_content;
+            }
+
+            self::$rendered_on_hook = true;
+
+            $position = get_option( 'scurl_button_position', 'woocommerce_before_cart_table' );
+
+            if ( in_array( $position, self::$positions_above_cart, true ) ) {
+                return $html . $block_content;
+            }
+
+            return $block_content . $html;
         }
 
         /**
