@@ -19,29 +19,114 @@
     display: none;
 }
 
+/* The field and its icons read as one control, so the icons sit in its corner
+   instead of taking a row of their own. */
 .scurl-share-row {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
     align-items: center;
+    gap: 4px;
+    box-sizing: border-box;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    border-radius: 6px;
+    padding: 3px 3px 3px 10px;
 }
 
-.scurl-share-input {
-    flex: 1 1 220px;
+.scurl-share-row:focus-within {
+    border-color: rgba(0, 0, 0, 0.45);
+}
+
+/* The input carries the row's border, so it drops its own. */
+.scurl-share-cart input.scurl-share-input {
+    flex: 1 1 auto;
     min-width: 0;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 6px 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    outline: 0;
+    color: inherit;
     /* 16px or larger keeps iOS from zooming the page when the field is focused. */
     font-size: 16px;
-    padding: 0.4em 0.6em;
+    line-height: 1.4;
+    text-overflow: ellipsis;
 }
 
-.scurl-share-row .button {
+.scurl-share-actions {
+    display: inline-flex;
     flex: 0 0 auto;
-    margin: 0;
+    align-items: center;
+    gap: 2px;
 }
 
-.scurl-native-share-btn[hidden] {
-    display: none;
+/* Themes style bare `button` elements in wildly different ways, so these reset
+   rather than inherit. The class selector beats element level theme rules
+   without needing !important; the `.button` class is deliberately absent. */
+.scurl-share-cart button.scurl-icon-btn {
+    -webkit-appearance: none;
+    appearance: none;
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    width: 30px;
+    height: 30px;
+    min-width: 0;
+    min-height: 0;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    box-shadow: none;
+    color: inherit;
+    font: inherit;
+    line-height: 0;
+    letter-spacing: normal;
+    text-transform: none;
+    text-decoration: none;
+    text-shadow: none;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.15s ease, background-color 0.15s ease;
 }
+
+.scurl-share-cart button.scurl-icon-btn:hover,
+.scurl-share-cart button.scurl-icon-btn:focus {
+    background: rgba(0, 0, 0, 0.07);
+    color: inherit;
+    opacity: 1;
+}
+
+.scurl-share-cart button.scurl-icon-btn:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 1px;
+}
+
+.scurl-share-cart button.scurl-icon-btn:active {
+    background: rgba(0, 0, 0, 0.12);
+}
+
+/* fill/stroke are set here as well as on the element, so a theme rule such as
+   `svg { fill: currentColor }` cannot repaint the icons. */
+.scurl-share-cart button.scurl-icon-btn svg {
+    display: block;
+    width: 17px;
+    height: 17px;
+    fill: none;
+    stroke: currentColor;
+    pointer-events: none;
+}
+
+/* More specific than the display rule above, so it wins wherever it sits. */
+/* .scurl-share-cart button.scurl-native-share-btn[hidden] {
+    display: none;
+} */
 
 .scurl-share-feedback {
     display: block;

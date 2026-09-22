@@ -1,0 +1,64 @@
+/* WooCommerce renders the checkbox *inside* its <label>, so the toggle is built
+   with :has() on the label. There is no sibling label to target. */
+#scurl_native_share_enabled {
+    position: absolute;
+    opacity: 0;
+}
+
+label[for="scurl_native_share_enabled"] {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    box-sizing: border-box;
+    width: 46px;
+    height: 24px;
+    border-radius: 12px;
+    background: #8c8f94;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+label[for="scurl_native_share_enabled"]::after {
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: 3px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 0.15s ease;
+}
+
+label[for="scurl_native_share_enabled"]:has(#scurl_native_share_enabled:checked) {
+    background: #2271b1;
+}
+
+label[for="scurl_native_share_enabled"]:has(#scurl_native_share_enabled:checked)::after {
+    transform: translateX(22px);
+}
+
+label[for="scurl_native_share_enabled"]:has(#scurl_native_share_enabled:focus-visible) {
+    outline: 2px solid #2271b1;
+    outline-offset: 2px;
+}
+
+/* Without :has() the toggle could never show its state, and the real checkbox
+   is hidden, so hand the browser its own checkbox back. */
+@supports not selector(:has(*)) {
+    #scurl_native_share_enabled {
+        position: static;
+        opacity: 1;
+    }
+
+    label[for="scurl_native_share_enabled"] {
+        width: auto;
+        height: auto;
+        border-radius: 0;
+        background: none;
+    }
+
+    label[for="scurl_native_share_enabled"]::after {
+        content: none;
+    }
+}

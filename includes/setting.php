@@ -13,7 +13,31 @@ if ( ! class_exists( 'SCURL_Settings' ) ) {
                 add_filter( 'woocommerce_settings_tabs_array', array( $this, 'add_settings_tab' ), 50 );
                 add_action( 'woocommerce_settings_tabs_share_cart_url', array( $this, 'settings_tab_content' ) );
                 add_action( 'woocommerce_update_options_share_cart_url', array( $this, 'update_settings' ) );
+                add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_styles' ) );
             }
+        }
+
+        /**
+         * Enqueue styles for the Share Cart settings tab.
+         *
+         * @param string $hook_suffix Current admin page hook suffix.
+         */
+        public function enqueue_admin_styles( $hook_suffix ) {
+            if ( 'woocommerce_page_wc-settings' !== $hook_suffix ) {
+                return;
+            }
+
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read only check of which settings tab is on screen.
+            if ( ! isset( $_GET['tab'] ) || 'share_cart_url' !== sanitize_key( wp_unslash( $_GET['tab'] ) ) ) {
+                return;
+            }
+
+            wp_enqueue_style(
+                'scurl-admin-style',
+                SCURL_PLUGIN_PATH . 'assets/css/scurl-admin.css',
+                array(),
+                SCURL_VERSION
+            );
         }
 
         /**
@@ -85,6 +109,20 @@ if ( ! class_exists( 'SCURL_Settings' ) ) {
                     'desc_tip'    => true,
                     'default'     => '',
                     'id'          => 'scurl_button_text'
+                ),
+                // WooCommerce renders the checkbox inside its <label> and ignores a
+                // 'label' key, so with desc_tip on the label is empty. The aria-label
+                // is what names the control for screen readers.
+                'native_share_enabled' => array(
+                    'name'              => esc_html__( 'Native Share Button', 'share-cart-for-woocommerce' ),
+                    'type'              => 'checkbox',
+                    'desc'              => esc_html__( 'Show the native share button beside the copy button. It only appears in browsers that support native sharing.', 'share-cart-for-woocommerce' ),
+                    'desc_tip'          => true,
+                    'default'           => 'no',
+                    'id'                => 'scurl_native_share_enabled',
+                    'custom_attributes' => array(
+                        'aria-label' => esc_attr__( 'Enable the native share button', 'share-cart-for-woocommerce' ),
+                    )
                 ),
                 'section_end' => array(
                     'type' => 'sectionend',

@@ -97,6 +97,10 @@ if ( ! class_exists( 'SCURL_Main' ) ) {
                 update_option( 'scurl_button_position', 'woocommerce_before_cart_table' );
             }
 
+            if ( false === get_option( 'scurl_native_share_enabled' ) ) {
+                update_option( 'scurl_native_share_enabled', 'no' );
+            }
+
             // Add settings link on the plugins page.
             add_filter( 'plugin_action_links_' . $this->plugin_basename, array( $this, 'insert_view_logs_link' ) );
             add_filter( 'plugin_row_meta', array( $this, 'addon_plugin_links' ), 10, 2 );

@@ -181,6 +181,7 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
 
             self::$instance_count++;
             $is_first = ( 1 === self::$instance_count );
+            $native_share_enabled = 'yes' === get_option( 'scurl_native_share_enabled', 'no' );
 
             ob_start();
             ?>
@@ -192,8 +193,25 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
                     <div class="scurl-share-row">
                         <input type="text" class="scurl-share-input" value="<?php echo esc_attr( $share_url ); ?>" readonly
                             aria-label="<?php esc_attr_e( 'Shared cart link', 'share-cart-for-woocommerce' ); ?>" />
-                        <button type="button" class="button scurl-copy-btn"><?php esc_html_e( 'Copy', 'share-cart-for-woocommerce' ); ?></button>
-                        <button type="button" class="button scurl-native-share-btn" hidden><?php esc_html_e( 'Share', 'share-cart-for-woocommerce' ); ?></button>
+                        <span class="scurl-share-actions">
+                            <button type="button" class="scurl-icon-btn scurl-copy-btn" aria-label="<?php esc_attr_e( 'Copy link', 'share-cart-for-woocommerce' ); ?>" title="<?php esc_attr_e( 'Copy link', 'share-cart-for-woocommerce' ); ?>">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                    <rect x="9" y="9" width="13" height="13" rx="2"></rect>
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                </svg>
+                            </button>
+                            <?php if ( $native_share_enabled ) : ?>
+                                <button type="button" class="scurl-icon-btn scurl-native-share-btn" aria-label="<?php esc_attr_e( 'Share link', 'share-cart-for-woocommerce' ); ?>" title="<?php esc_attr_e( 'Share link', 'share-cart-for-woocommerce' ); ?>" hidden>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                        <circle cx="18" cy="5" r="3"></circle>
+                                        <circle cx="6" cy="12" r="3"></circle>
+                                        <circle cx="18" cy="19" r="3"></circle>
+                                        <path d="M8.59 13.51 15.42 17.49"></path>
+                                        <path d="M15.41 6.51 8.59 10.49"></path>
+                                    </svg>
+                                </button>
+                            <?php endif; ?>
+                        </span>
                     </div>
                     <span class="scurl-share-feedback" role="status" aria-live="polite"></span>
                 </div>
