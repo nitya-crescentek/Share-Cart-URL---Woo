@@ -168,6 +168,11 @@ For support, please use the WordPress.org support forum for this plugin. We moni
 
 == Changelog ==
 
+= 1.4 =
+* Added: "Email this cart" button. When enabled in settings, an envelope icon appears beside the share icon and opens a popup where customers enter their email address and an optional message, then receive the cart link by email. Off by default.
+* Added: cart emails use the WooCommerce email template, and the `scurl_email_cart_args` filter can change the subject, heading or body.
+* Security: the emailed link is always built on the server from the visitor's own cart, and sending is limited to 5 emails per visitor per hour (filterable with `scurl_email_rate_limit`).
+
 = 1.3 =
 * Security: removed an unused cart price override code path that allowed the submitted cart form to change product prices. All users should update.
 * Security: shared cart data is now restored without instantiating objects, and the share key is strictly validated before any file is read.

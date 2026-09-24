@@ -134,6 +134,17 @@ if ( ! class_exists( 'SCURL_Settings' ) ) {
                         'aria-label' => esc_attr__( 'Enable the native share button', 'share-cart-for-woocommerce' ),
                     )
                 ),
+                'email_cart_enabled' => array(
+                    'name'              => esc_html__( 'Email Cart Button', 'share-cart-for-woocommerce' ),
+                    'type'              => 'checkbox',
+                    'desc'              => esc_html__( 'Show an email button beside the share button. Customers enter their email address and an optional note, and receive the cart link by email.', 'share-cart-for-woocommerce' ),
+                    'desc_tip'          => true,
+                    'default'           => 'no',
+                    'id'                => 'scurl_email_cart_enabled',
+                    'custom_attributes' => array(
+                        'aria-label' => esc_attr__( 'Enable the email cart button', 'share-cart-for-woocommerce' ),
+                    )
+                ),
                 'section_end' => array(
                     'type' => 'sectionend',
                     'id'   => 'scurl_settings_section_end'

@@ -209,6 +209,168 @@ jQuery(function ($) {
         });
     });
 
+    /**
+     * "Email this cart" popup. It is printed once in the footer and shared by
+     * every widget on the page.
+     */
+    var $emailModal = $('#scurl-email-modal');
+    var emailOpener = null;
+
+    function emailFocusable() {
+        return $emailModal.find('.scurl-email-dialog')
+            .find('button, input, textarea')
+            .filter(':visible:not(:disabled)');
+    }
+
+    function openEmailModal(opener) {
+        emailOpener = opener;
+
+        $emailModal.find('.scurl-email-feedback').text('').removeClass('is-error is-success');
+        $emailModal.prop('hidden', false);
+        $(document.body).addClass('scurl-email-open');
+
+        var $to = $emailModal.find('#scurl-email-to');
+        ($to.val() ? $emailModal.find('#scurl-email-message') : $to).trigger('focus');
+    }
+
+    function closeEmailModal() {
+        if ($emailModal.prop('hidden')) {
+            return;
+        }
+
+        $emailModal.prop('hidden', true);
+        $(document.body).removeClass('scurl-email-open');
+
+        // Hand focus back to the button that opened the popup, if it is still
+        // in the page after any cart refresh.
+        if (emailOpener && document.body.contains(emailOpener)) {
+            emailOpener.focus();
+        }
+        emailOpener = null;
+    }
+
+    $(document.body).on('click', '.scurl-email-btn', function (e) {
+        e.preventDefault();
+        openEmailModal(this);
+    });
+
+    /**
+     * Mark the "You" or "Other" link as the active one.
+     *
+     * @param {string} recipient 'self' or 'other'.
+     */
+    function setRecipient(recipient) {
+        $emailModal.find('.scurl-email-recipient-btn').each(function () {
+            $(this).attr('aria-pressed', $(this).attr('data-scurl-recipient') === recipient ? 'true' : 'false');
+        });
+    }
+
+    // "You" fills in the account email, "Other" clears the field for a
+    // different address. Only rendered for logged in customers.
+    $emailModal.on('click', '.scurl-email-recipient-btn', function (e) {
+        e.preventDefault();
+
+        var recipient = $(this).attr('data-scurl-recipient');
+        var $to = $emailModal.find('#scurl-email-to');
+
+        $to.val(recipient === 'self' ? $(this).attr('data-scurl-email') : '');
+        setRecipient(recipient);
+        $emailModal.find('.scurl-email-feedback').text('').removeClass('is-error is-success');
+        $to.trigger('focus');
+    });
+
+    // Keep the links in step with what is typed, so editing the account email
+    // by hand switches to "Other" and typing it back switches to "You".
+    $emailModal.on('input', '#scurl-email-to', function () {
+        var accountEmail = $emailModal.find('[data-scurl-recipient="self"]').attr('data-scurl-email');
+
+        if (accountEmail) {
+            setRecipient($.trim($(this).val()).toLowerCase() === accountEmail.toLowerCase() ? 'self' : 'other');
+        }
+    });
+
+    $emailModal.on('click', '[data-scurl-close]', function (e) {
+        e.preventDefault();
+        closeEmailModal();
+    });
+
+    $(document).on('keydown', function (e) {
+        if ($emailModal.prop('hidden')) {
+            return;
+        }
+
+        if (e.key === 'Escape') {
+            closeEmailModal();
+            return;
+        }
+
+        // Keep Tab inside the popup while it is open.
+        if (e.key === 'Tab') {
+            var $items = emailFocusable();
+
+            if (!$items.length) {
+                return;
+            }
+
+            var first = $items[0];
+            var last = $items[$items.length - 1];
+
+            if (e.shiftKey && document.activeElement === first) {
+                e.preventDefault();
+                last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+                e.preventDefault();
+                first.focus();
+            }
+        }
+    });
+
+    $emailModal.on('submit', '.scurl-email-form', function (e) {
+        e.preventDefault();
+
+        var $form = $(this);
+        var $submit = $form.find('.scurl-email-submit');
+        var $feedback = $form.find('.scurl-email-feedback');
+        var $to = $form.find('#scurl-email-to');
+        var email = $.trim($to.val());
+
+        $feedback.text('').removeClass('is-error is-success');
+
+        if (!email || !$to[0].checkValidity()) {
+            $feedback.text(i18n.email_bad).addClass('is-error');
+            $to.trigger('focus');
+            return;
+        }
+
+        $submit.prop('disabled', true).text(i18n.sending);
+
+        // The server builds the link from the current session, so no URL is
+        // sent from here.
+        $.ajax({
+            url: share_cart_ajax.ajax_url,
+            type: 'POST',
+            data: {
+                action: 'scurl_email_cart',
+                nonce: share_cart_ajax.nonce,
+                email: email,
+                message: $form.find('#scurl-email-message').val()
+            }
+        }).done(function (response) {
+            var message = response && response.data && response.data.message;
+
+            if (response && response.success) {
+                $feedback.text(message).addClass('is-success');
+                $form.find('#scurl-email-message').val('');
+            } else {
+                $feedback.text(message || i18n.email_err).addClass('is-error');
+            }
+        }).fail(function () {
+            $feedback.text(i18n.email_err).addClass('is-error');
+        }).always(function () {
+            $submit.prop('disabled', false).text(i18n.send);
+        });
+    });
+
     // Show the native share button up front where it is supported.
     if (navigator.share) {
         $('.scurl-native-share-btn').prop('hidden', false);

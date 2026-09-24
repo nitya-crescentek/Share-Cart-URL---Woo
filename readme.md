@@ -7,6 +7,7 @@
 
 Next - Plan
 
-1. Email this cart to me - enable option in settings (default off - popup to enter mail)
+1. Email this cart to me - enable option in settings (default off - popup to enter mail a textbox for simple message with cart link)
 2. Merge vs. replace on load - enable option in settings (default off)
-3. Save cart urls for everyone - save urls with a name
+3. Configurable expiry and dedicated storage are planned for a future release.
+4. Save cart urls for everyone - save urls with a name
