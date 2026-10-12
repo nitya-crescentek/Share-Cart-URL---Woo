@@ -134,6 +134,17 @@ if ( ! class_exists( 'SCURL_Settings' ) ) {
                         'aria-label' => esc_attr__( 'Enable the native share button', 'share-cart-for-woocommerce' ),
                     )
                 ),
+                'shared_cart_notice' => array(
+                    'name'              => esc_html__( 'Shared Cart Notice', 'share-cart-for-woocommerce' ),
+                    'type'              => 'checkbox',
+                    'desc'              => esc_html__( 'Show a notice when a customer opens a shared cart link, saying the shared cart was loaded and whether it replaced the items already in their cart.', 'share-cart-for-woocommerce' ),
+                    'desc_tip'          => true,
+                    'default'           => 'yes',
+                    'id'                => 'scurl_shared_cart_notice',
+                    'custom_attributes' => array(
+                        'aria-label' => esc_attr__( 'Show the shared cart notice', 'share-cart-for-woocommerce' ),
+                    )
+                ),
                 'email_cart_enabled' => array(
                     'name'              => esc_html__( 'Email Cart Button', 'share-cart-for-woocommerce' ),
                     'type'              => 'checkbox',
@@ -144,6 +155,18 @@ if ( ! class_exists( 'SCURL_Settings' ) ) {
                     'custom_attributes' => array(
                         'aria-label' => esc_attr__( 'Enable the email cart button', 'share-cart-for-woocommerce' ),
                     )
+                ),
+                'email_cart_access' => array(
+                    'name'     => esc_html__( 'Who Can Email Carts', 'share-cart-for-woocommerce' ),
+                    'type'     => 'select',
+                    'options'  => array(
+                        'logged_in' => esc_html__( 'Logged in customers only', 'share-cart-for-woocommerce' ),
+                        'everyone'  => esc_html__( 'Everyone, including guests', 'share-cart-for-woocommerce' ),
+                    ),
+                    'desc'     => esc_html__( 'Guests who are not allowed to send see a link to log in or register on the My Account page instead of the email form. Letting guests send means anyone can use your store to email a cart link to any address.', 'share-cart-for-woocommerce' ),
+                    'desc_tip' => true,
+                    'default'  => 'logged_in',
+                    'id'       => 'scurl_email_cart_access'
                 ),
                 'section_end' => array(
                     'type' => 'sectionend',

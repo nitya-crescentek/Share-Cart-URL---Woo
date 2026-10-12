@@ -29,6 +29,8 @@ In today's social shopping environment, customers want to share their finds with
 = Key Features =
 
 * One-Click Cart Sharing - Generate shareable URLs instantly from the cart page
+* Email This Cart - Optional button that emails the cart link, with a personal note, using your store's WooCommerce email template
+* Native Share - Optional button that opens the device share sheet on supporting browsers
 * Flexible Button Placement - Choose from multiple hook positions to match your theme
 * Seamless WooCommerce Integration - Native integration with WooCommerce settings
 * Easy Configuration - Simple settings interface in WooCommerce admin
@@ -52,9 +54,23 @@ In today's social shopping environment, customers want to share their finds with
 1. Customer adds products to their WooCommerce cart
 2. A "Share Cart" button appears on the cart page (position customizable)
 3. Clicking the button generates a unique shareable URL
-4. The URL can be copied and shared via email, messaging apps, or social media
+4. The URL can be shared via messaging apps or social media, or sent from your store with the Email this cart button
 5. Recipients click the link and see the exact cart contents
-6. Products are automatically added to the recipient's cart
+6. The shared products are loaded into the recipient's cart, replacing what was in it, and a notice confirms it (this can be turned off)
+
+= Email This Cart =
+
+Turn on Email Cart Button under WooCommerce > Settings > Share Cart. When a customer clicks the share button, an envelope icon appears beside the copy icon. It opens a popup where the customer enters an email address and an optional note of up to 500 characters, and the cart link is sent to that address.
+
+* By default only logged in customers can send. Guests see a link to log in or register on the My Account page instead of the form. To let guests send as well, change the Who Can Email Carts setting
+* Logged in customers can send the link to their own account email with one click, or choose Other to send it to someone else
+* The email is sent through WooCommerce, using the From name and address, header image, colours and footer text set in WooCommerce > Settings > Emails
+* The link is always built on the server from the customer's own cart, so the form cannot be used to send any other link
+* Links, web addresses and email addresses are not allowed in the note, and the note appears below the cart link, labelled as written by the sender, so the form cannot be used to send phishing messages in your store's name
+* Each customer can send up to 5 emails per hour, counted per account, so the limit stays accurate on busy stores behind a CDN or load balancer. Guests, when allowed, are counted per IP address
+* Off by default
+
+Developers can change the subject, heading and body of the email with the `scurl_email_cart_args` filter. See the FAQ for examples.
 
 = Configuration Options =
 
@@ -63,9 +79,14 @@ Navigate to WooCommerce > Settings > Share Cart to access:
 * Button Position - Select from multiple WooCommerce cart hooks
 * Button Text - Change the button label without writing any code
 * Button Display - Control when and where the share button appears
+* Native Share Button - Show a share sheet button on browsers that support it (off by default)
+* Shared Cart Notice - Show a notice when a shared cart link is opened (on by default)
+* Email Cart Button - Let customers email the cart link to themselves or someone else (off by default)
+* Who Can Email Carts - Logged in customers only (default), or everyone including guests
 * Easy Customization - Style the button with custom CSS
 
 Available button positions include:
+
 * Before Cart Table
 * Before Cart Contents
 * After Cart
@@ -79,7 +100,9 @@ Available button positions include:
 
 = Privacy & Security =
 
-This plugin respects user privacy and follows WordPress security best practices. Cart URLs are generated using WooCommerce's built-in functionality, ensuring data security and compliance.
+This plugin respects user privacy and follows WordPress security best practices. A shared cart is saved as a small file in the server's temporary directory, named by a hash of the cart contents. Only the products, quantities and coupons are shared. No customer account, address or payment details are included.
+
+When a customer uses Email this cart, the email address and note are used only to send that email and are not saved by the plugin. To limit sending, the plugin keeps a count of emails per customer account for one hour. If guests are allowed to send, a hashed copy of the guest's IP address is kept for one hour instead.
 
 == Installation ==
 
@@ -94,7 +117,7 @@ This plugin respects user privacy and follows WordPress security best practices.
 = Manual Installation =
 
 1. Download the plugin ZIP file
-2. Upload the `share-cart-url-for-woocommerce` folder to `/wp-content/plugins/`
+2. Upload the `share-cart-for-woocommerce` folder to `/wp-content/plugins/`
 3. Activate the plugin through the Plugins menu in WordPress
 4. Navigate to WooCommerce > Settings > Share Cart to configure
 
@@ -104,7 +127,7 @@ This plugin respects user privacy and follows WordPress security best practices.
 * WooCommerce 5.0 or higher
 * PHP 7.4 or higher
 
-Note: This plugin requires WooCommerce to be installed and active. If WooCommerce is not active, the plugin will automatically deactivate with an admin notice.
+Note: This plugin requires WooCommerce to be installed and active. If WooCommerce is not active, activation is stopped and a message explains that WooCommerce is required.
 
 = First-Time Setup =
 
@@ -122,7 +145,7 @@ Navigate to WooCommerce > Settings > Share Cart after activation. Select your de
 
 = What happens if WooCommerce is not active? =
 
-The plugin automatically checks for WooCommerce during activation. If WooCommerce is not installed or active, the plugin will deactivate itself and display an admin notice informing you that WooCommerce is required.
+The plugin checks for WooCommerce during activation. If WooCommerce is not installed or active, activation is stopped and a message explains that WooCommerce is required. If WooCommerce is deactivated later, the share button simply stops appearing until it is active again.
 
 = Can I customize the appearance of the share cart button? =
 
@@ -138,7 +161,11 @@ Shared cart URLs do not expire on a fixed schedule. They are stored in the serve
 
 = Can recipients modify the shared cart? =
 
-Yes, once products are added to the recipient's cart via the shared URL, they can modify quantities, remove items, or add additional products just like a normal shopping cart.
+Yes. The shared products replace the recipient's cart, and they can then change quantities, remove items or add more products like any other cart. Opening the same link again loads the shared cart again.
+
+= Can I turn off the "shared cart loaded" notice? =
+
+Yes. When someone opens a share link, a notice confirms the shared cart was loaded and says whether it replaced the items already in their cart. Turn it off with Shared Cart Notice under WooCommerce > Settings > Share Cart, or change the wording with the `scurl_shared_cart_notice_text` filter.
 
 = Does this work with variable products? =
 
@@ -156,6 +183,102 @@ Yes! The plugin is fully responsive and works seamlessly on smartphones, tablets
 
 The share button only appears when there are items in the cart, preventing confusion from sharing empty carts.
 
+= How do I let customers email their cart? =
+
+Go to WooCommerce > Settings > Share Cart, turn on Email Cart Button and save. When a customer clicks the share button, an envelope icon appears next to the copy icon. Clicking it opens a popup where they enter an email address and an optional note, and the cart link is sent to that address.
+
+By default only logged in customers can send. Guests who open the popup see a link to log in or register on the My Account page. To let guests send as well, set Who Can Email Carts to "Everyone, including guests". That means anyone can use your store to email a cart link to any address, so keep the rate limit in place.
+
+= How can I customize the cart email? =
+
+The email is wrapped in your WooCommerce email template, so the From name and address, header image, colours and footer text all come from WooCommerce > Settings > Emails.
+
+To change the subject, heading or body, use the `scurl_email_cart_args` filter. Add the code to your child theme's `functions.php` file or a code snippets plugin.
+
+The filter receives three values:
+
+* `$args` - an array with `subject`, `heading` (the title shown in the email header) and `body` (the HTML placed inside the template)
+* `$share_url` - the cart link
+* `$message` - the customer's note as plain text, or an empty string. It never contains links. Escape it before adding it to the body, and keep it below your own text with a label showing it was written by the sender, so it cannot be mistaken for a message from your store.
+
+Change the subject and heading:
+
+```php
+add_filter( 'scurl_email_cart_args', function ( $args, $share_url, $message ) {
+    $args['subject'] = 'Your saved cart is waiting';
+    $args['heading'] = 'Ready when you are';
+
+    return $args;
+}, 10, 3 );
+```
+
+Replace the body with your own layout, including a list of the products in the cart:
+
+```php
+add_filter( 'scurl_email_cart_args', function ( $args, $share_url, $message ) {
+    $items = '';
+    foreach ( WC()->cart->get_cart() as $cart_item ) {
+        $items .= sprintf(
+            '<li>%s &times; %d</li>',
+            esc_html( $cart_item['data']->get_name() ),
+            absint( $cart_item['quantity'] )
+        );
+    }
+
+    $body  = '<p>Here is what is in your cart:</p>';
+    $body .= '<ul>' . $items . '</ul>';
+    $body .= '<p><a href="' . esc_url( $share_url ) . '">Open your cart</a></p>';
+
+    if ( '' !== $message ) {
+        $body .= '<p><strong>Note from the sender:</strong><br>' . nl2br( esc_html( $message ) ) . '</p>';
+    }
+
+    $args['body'] = $body;
+
+    return $args;
+}, 10, 3 );
+```
+
+The header and footer come from the WooCommerce templates `emails/email-header.php` and `emails/email-footer.php`. You can override them in your theme, but the change then applies to every WooCommerce email.
+
+= Can I change how many emails a customer can send? =
+
+Yes. By default each customer can send 5 cart emails per hour, counted per account. There is no store-wide limit unless you set one. Change the per customer limit with the `scurl_email_rate_limit` filter, and add a store-wide hourly limit with the `scurl_email_store_rate_limit` filter:
+
+```php
+add_filter( 'scurl_email_rate_limit', function () {
+    return 10;
+} );
+
+add_filter( 'scurl_email_store_rate_limit', function () {
+    return 200;
+} );
+```
+
+Returning `0` from `scurl_email_rate_limit` removes the per customer limit, which is not recommended on a live store. A store-wide limit stops every customer from sending once it is reached, so set it well above your normal hourly volume.
+
+If you let guests send, guests are told apart by IP address. If your site is behind Cloudflare or another proxy, every guest can appear to have the proxy's address and share one allowance. Return the real address from the header your proxy sets with the `scurl_email_client_ip` filter. Only do this when the site really is behind that proxy, because anyone can send the header otherwise.
+
+```php
+add_filter( 'scurl_email_client_ip', function ( $ip ) {
+    if ( ! empty( $_SERVER['HTTP_CF_CONNECTING_IP'] ) ) {
+        return sanitize_text_field( wp_unslash( $_SERVER['HTTP_CF_CONNECTING_IP'] ) );
+    }
+
+    return $ip;
+} );
+```
+
+= Which hooks are available for developers? =
+
+* `scurl_button_text` - filter the share button label
+* `scurl_share_url` - filter the generated share link. Receives the URL and the cart hash.
+* `scurl_email_cart_args` - filter the subject, heading and body of the cart email
+* `scurl_email_rate_limit` - filter how many cart emails one customer, or one guest IP address, may send per hour. Default 5.
+* `scurl_email_store_rate_limit` - filter how many cart emails the whole store may send per hour. Default 0, no limit.
+* `scurl_email_client_ip` - filter the guest IP address used for the limit when guests may send
+* `scurl_shared_cart_notice_text` - filter the notice shown when a shared cart is loaded. Receives the text and whether it replaced other items. Return plain text, since the notice is escaped before it is shown.
+
 = How do I get support? =
 
 For support, please use the WordPress.org support forum for this plugin. We monitor and respond to questions regularly.
@@ -165,13 +288,19 @@ For support, please use the WordPress.org support forum for this plugin. We moni
 1. Cart Page with Share Button
 2. Share Cart Settings Tab under WooCommerce settings
 3. Cart Page with generated link and buttons.
+4. Email this cart popup
 
 == Changelog ==
 
 = 1.4 =
 * Added: "Email this cart" button. When enabled in settings, an envelope icon appears beside the share icon and opens a popup where customers enter their email address and an optional message, then receive the cart link by email. Off by default.
 * Added: cart emails use the WooCommerce email template, and the `scurl_email_cart_args` filter can change the subject, heading or body.
-* Security: the emailed link is always built on the server from the visitor's own cart, and sending is limited to 5 emails per visitor per hour (filterable with `scurl_email_rate_limit`).
+* Added: Who Can Email Carts setting. Only logged in customers can send by default, and guests see a link to log in or register on the My Account page. Stores can allow guests to send as well.
+* Added: a notice when a shared cart link is opened, saying the shared cart was loaded and whether it replaced the items already in the cart. It works on the classic cart and the Cart block, and can be turned off in settings.
+* Security: the emailed link is always built on the server from the visitor's own cart.
+* Security: links, web addresses and email addresses are refused in the email note, and the note is shown below the cart link, labelled as written by the sender, so the form cannot be used to send phishing messages in the store's name.
+* Security: sending is limited to 5 emails per hour per customer account, or per IP address for guests when they are allowed (filterable with `scurl_email_rate_limit`). An optional store-wide hourly limit can be set with `scurl_email_store_rate_limit`. Stores behind a proxy that allow guests can supply the real visitor IP with `scurl_email_client_ip`.
+* Fixed: opening a share link now loads the cart and then reloads the page without the share parameter. Previously the shared cart was restored again on every refresh, and on the classic cart removing an item or updating the cart brought the shared cart straight back.
 
 = 1.3 =
 * Security: removed an unused cart price override code path that allowed the submitted cart form to change product prices. All users should update.
@@ -217,6 +346,9 @@ For support, please use the WordPress.org support forum for this plugin. We moni
 * Translation-ready code
 
 == Upgrade Notice ==
+
+= 1.4 =
+Adds an optional Email this cart button, off by default, and a notice when a shared cart is opened. Also fixes shared carts being restored again on refresh, which undid the recipient's changes.
 
 = 1.3 =
 Important security update. Also fixes copying the share link on iPhone, iPad and Safari. Update is strongly recommended for all users.

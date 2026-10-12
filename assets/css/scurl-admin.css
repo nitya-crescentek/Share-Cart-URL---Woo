@@ -1,12 +1,14 @@
 /* WooCommerce renders the checkbox *inside* its <label>, so the toggle is built
    with :has() on the label. There is no sibling label to target. */
 #scurl_native_share_enabled,
+#scurl_shared_cart_notice,
 #scurl_email_cart_enabled {
     position: absolute;
     opacity: 0;
 }
 
 label[for="scurl_native_share_enabled"],
+label[for="scurl_shared_cart_notice"],
 label[for="scurl_email_cart_enabled"] {
     position: relative;
     display: inline-flex;
@@ -21,6 +23,7 @@ label[for="scurl_email_cart_enabled"] {
 }
 
 label[for="scurl_native_share_enabled"]::after,
+label[for="scurl_shared_cart_notice"]::after,
 label[for="scurl_email_cart_enabled"]::after {
     content: "";
     position: absolute;
@@ -34,16 +37,19 @@ label[for="scurl_email_cart_enabled"]::after {
 }
 
 label[for="scurl_native_share_enabled"]:has(#scurl_native_share_enabled:checked),
+label[for="scurl_shared_cart_notice"]:has(#scurl_shared_cart_notice:checked),
 label[for="scurl_email_cart_enabled"]:has(#scurl_email_cart_enabled:checked) {
     background: #2271b1;
 }
 
 label[for="scurl_native_share_enabled"]:has(#scurl_native_share_enabled:checked)::after,
+label[for="scurl_shared_cart_notice"]:has(#scurl_shared_cart_notice:checked)::after,
 label[for="scurl_email_cart_enabled"]:has(#scurl_email_cart_enabled:checked)::after {
     transform: translateX(22px);
 }
 
 label[for="scurl_native_share_enabled"]:has(#scurl_native_share_enabled:focus-visible),
+label[for="scurl_shared_cart_notice"]:has(#scurl_shared_cart_notice:focus-visible),
 label[for="scurl_email_cart_enabled"]:has(#scurl_email_cart_enabled:focus-visible) {
     outline: 2px solid #2271b1;
     outline-offset: 2px;
@@ -53,12 +59,14 @@ label[for="scurl_email_cart_enabled"]:has(#scurl_email_cart_enabled:focus-visibl
    is hidden, so hand the browser its own checkbox back. */
 @supports not selector(:has(*)) {
     #scurl_native_share_enabled,
+    #scurl_shared_cart_notice,
     #scurl_email_cart_enabled {
         position: static;
         opacity: 1;
     }
 
     label[for="scurl_native_share_enabled"],
+    label[for="scurl_shared_cart_notice"],
     label[for="scurl_email_cart_enabled"] {
         width: auto;
         height: auto;
@@ -67,6 +75,7 @@ label[for="scurl_email_cart_enabled"]:has(#scurl_email_cart_enabled:focus-visibl
     }
 
     label[for="scurl_native_share_enabled"]::after,
+    label[for="scurl_shared_cart_notice"]::after,
     label[for="scurl_email_cart_enabled"]::after {
         content: none;
     }

@@ -105,6 +105,14 @@ if ( ! class_exists( 'SCURL_Main' ) ) {
                 update_option( 'scurl_email_cart_enabled', 'no' );
             }
 
+            if ( false === get_option( 'scurl_email_cart_access' ) ) {
+                update_option( 'scurl_email_cart_access', 'logged_in' );
+            }
+
+            if ( false === get_option( 'scurl_shared_cart_notice' ) ) {
+                update_option( 'scurl_shared_cart_notice', 'yes' );
+            }
+
             // Add settings link on the plugins page.
             add_filter( 'plugin_action_links_' . $this->plugin_basename, array( $this, 'insert_view_logs_link' ) );
             add_filter( 'plugin_row_meta', array( $this, 'addon_plugin_links' ), 10, 2 );

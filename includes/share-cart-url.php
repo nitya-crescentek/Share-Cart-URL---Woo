@@ -57,6 +57,42 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
         private static $email_modal_needed = false;
 
         /**
+         * Whether a shared cart was restored on this request, so the page can
+         * be reloaded without the share parameter.
+         *
+         * @var bool
+         */
+        private static $shared_cart_applied = false;
+
+        /**
+         * Shared cart notice taken from the session for this page view, and
+         * whether it has been printed yet.
+         *
+         * @var string
+         */
+        private static $pending_notice = '';
+
+        /**
+         * @var bool
+         */
+        private static $notice_printed = false;
+
+        /**
+         * Session key holding the shared cart notice until the next page view.
+         */
+        const NOTICE_SESSION_KEY = 'scurl_shared_cart_notice';
+
+        /**
+         * Nonce action for both AJAX endpoints.
+         *
+         * WooCommerce ties a guest's nonce to their cart session only when the
+         * action starts with "woocommerce". Without that, every guest shares
+         * one nonce, and another site could submit the email form on a guest's
+         * behalf when guests are allowed to send.
+         */
+        const NONCE_ACTION = 'woocommerce-scurl-share-cart';
+
+        /**
          * Longest note, in characters, accepted in the email popup.
          */
         const EMAIL_MESSAGE_MAX_LENGTH = 500;
@@ -78,12 +114,22 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
             add_shortcode( 'share_cart_url', array( __CLASS__, 'scurl_shortcode' ) );
 
             add_action( 'woocommerce_load_cart_from_session', array( __CLASS__, 'scurl_apply_shared_cart_session' ), 1 );
+            // Priority 1 runs after the wc-ajax handler (0) and before canonical redirects.
+            add_action( 'template_redirect', array( __CLASS__, 'scurl_redirect_after_shared_cart' ), 1 );
+            add_action( 'template_redirect', array( __CLASS__, 'scurl_take_shared_cart_notice' ), 20 );
+            // Before WooCommerce prints its own notices on the classic cart (10).
+            add_action( 'woocommerce_before_cart', array( __CLASS__, 'scurl_print_shared_cart_notice' ), 5 );
+            // After the widget filter (10), so the notice sits above the widget.
+            add_filter( 'render_block', array( __CLASS__, 'scurl_print_notice_before_cart_block' ), 11, 2 );
             add_action( 'wp_ajax_generate_share_link', array( __CLASS__, 'scurl_ajax_generate_share_link' ) );
             add_action( 'wp_ajax_nopriv_generate_share_link', array( __CLASS__, 'scurl_ajax_generate_share_link' ) );
 
             if ( self::scurl_is_email_enabled() ) {
                 add_action( 'wp_ajax_scurl_email_cart', array( __CLASS__, 'scurl_ajax_email_cart' ) );
-                add_action( 'wp_ajax_nopriv_scurl_email_cart', array( __CLASS__, 'scurl_ajax_email_cart' ) );
+                // Guests can only reach the endpoint when the store lets them email carts.
+                if ( self::scurl_guests_can_email() ) {
+                    add_action( 'wp_ajax_nopriv_scurl_email_cart', array( __CLASS__, 'scurl_ajax_email_cart' ) );
+                }
                 add_action( 'wp_footer', array( __CLASS__, 'scurl_render_email_modal' ) );
             }
 
@@ -97,6 +143,25 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
          */
         public static function scurl_is_email_enabled() {
             return 'yes' === get_option( 'scurl_email_cart_enabled', 'no' );
+        }
+
+        /**
+         * Whether guests may email carts. Off by default, so only logged in
+         * customers can send.
+         *
+         * @return bool
+         */
+        public static function scurl_guests_can_email() {
+            return 'everyone' === get_option( 'scurl_email_cart_access', 'logged_in' );
+        }
+
+        /**
+         * Whether the current visitor may email the cart.
+         *
+         * @return bool
+         */
+        public static function scurl_can_email_cart() {
+            return is_user_logged_in() || self::scurl_guests_can_email();
         }
 
         /**
@@ -161,8 +226,10 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
          */
         public static function scurl_apply_shared_cart_session() {
 
+            // An array, as in ?share[]=1, made sanitize_file_name() throw a
+            // TypeError, so any visitor could crash any page.
             // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Public share link, affects only the visitor's own cart.
-            if ( ! isset( $_REQUEST['share'] ) ) {
+            if ( ! isset( $_REQUEST['share'] ) || ! is_string( $_REQUEST['share'] ) ) {
                 return;
             }
 
@@ -194,11 +261,190 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
                 return;
             }
 
+            // Read before the session is overwritten, for the notice below.
+            $previous_cart = WC()->session->get( 'cart' );
+
+            // A logged in customer starting a new session has no session cart
+            // yet. WooCommerce would load their saved cart next, and the shared
+            // cart now replaces that instead, so it counts as the previous cart.
+            if ( empty( $previous_cart ) && is_user_logged_in() && apply_filters( 'woocommerce_persistent_cart_enabled', true ) ) {
+                $saved_cart    = get_user_meta( get_current_user_id(), '_woocommerce_persistent_cart_' . get_current_blog_id(), true );
+                $previous_cart = isset( $saved_cart['cart'] ) ? $saved_cart['cart'] : array();
+            }
+
+            $shared_items = isset( $cart['cart'] ) ? $cart['cart'] : array();
+            $replaced     = ! empty( $previous_cart ) && self::scurl_cart_signature( $previous_cart ) !== self::scurl_cart_signature( $shared_items );
+
             foreach ( self::$session_cart_keys as $key ) {
                 if ( array_key_exists( $key, $cart ) ) {
                     WC()->session->set( $key, $cart[ $key ] );
                 }
             }
+
+            self::$shared_cart_applied = true;
+
+            self::scurl_add_shared_cart_notice( $replaced );
+        }
+
+        /**
+         * Reduce cart items to what makes two carts the same for the customer:
+         * which items, and how many of each.
+         *
+         * Cart item keys already encode the product, variation and item data.
+         * Totals are left out, since the same items can be priced or taxed
+         * differently between sessions.
+         *
+         * @param array $items Session cart items, keyed by cart item key.
+         * @return string
+         */
+        private static function scurl_cart_signature( $items ) {
+            $lines = array();
+
+            foreach ( (array) $items as $key => $item ) {
+                $lines[] = $key . ':' . ( isset( $item['quantity'] ) ? (float) $item['quantity'] : 0 );
+            }
+
+            sort( $lines );
+
+            return implode( '|', $lines );
+        }
+
+        /**
+         * Tell the visitor the shared cart was loaded, and whether it replaced
+         * the items already in their cart, since that happens silently.
+         *
+         * The text is kept in the session, so it survives the redirect that
+         * strips the share parameter, and is printed on the next page view.
+         *
+         * WooCommerce's own notice queue is not used. With a classic theme the
+         * Cart block never prints that queue, so the notice would surface later
+         * on some unrelated page instead.
+         *
+         * @param bool $replaced Whether the visitor's cart held other items.
+         */
+        private static function scurl_add_shared_cart_notice( $replaced ) {
+            if ( 'yes' !== get_option( 'scurl_shared_cart_notice', 'yes' ) ) {
+                return;
+            }
+
+            $notice = $replaced
+                ? __( 'The shared cart has been loaded and has replaced the items that were in your cart.', 'share-cart-for-woocommerce' )
+                : __( 'The shared cart has been loaded.', 'share-cart-for-woocommerce' );
+
+            /**
+             * Filter the notice shown when a shared cart is loaded.
+             *
+             * @param string $notice   Notice text.
+             * @param bool   $replaced Whether the visitor's cart held other items.
+             */
+            $notice = (string) apply_filters( 'scurl_shared_cart_notice_text', $notice, $replaced );
+
+            if ( '' !== $notice ) {
+                WC()->session->set( self::NOTICE_SESSION_KEY, $notice );
+            }
+        }
+
+        /**
+         * Move the shared cart notice out of the session on the page view that
+         * follows the share link.
+         *
+         * Taken once, whether or not the page is a cart, so it can never show
+         * up later somewhere unrelated. Runs after the share redirect, which
+         * exits, so the request that loads the cart never takes it.
+         */
+        public static function scurl_take_shared_cart_notice() {
+            if ( ! function_exists( 'WC' ) || ! WC()->session ) {
+                return;
+            }
+
+            $notice = WC()->session->get( self::NOTICE_SESSION_KEY );
+
+            if ( empty( $notice ) ) {
+                return;
+            }
+
+            self::$pending_notice = (string) $notice;
+            WC()->session->set( self::NOTICE_SESSION_KEY, null );
+        }
+
+        /**
+         * Build the shared cart notice markup, once per page.
+         *
+         * Uses WooCommerce's notice template, so it matches the store's other
+         * notices, including the block styled ones in block themes.
+         *
+         * @return string
+         */
+        private static function scurl_get_shared_cart_notice_html() {
+            if ( '' === self::$pending_notice || self::$notice_printed || ! function_exists( 'wc_print_notice' ) ) {
+                return '';
+            }
+
+            self::$notice_printed = true;
+
+            // Buffered rather than using wc_print_notice()'s return flag, which
+            // only exists from WooCommerce 7.7.
+            ob_start();
+            wc_print_notice( esc_html( self::$pending_notice ), 'notice' );
+
+            return '<div class="woocommerce scurl-shared-cart-notice">' . ob_get_clean() . '</div>';
+        }
+
+        /**
+         * Print the shared cart notice above the classic cart.
+         */
+        public static function scurl_print_shared_cart_notice() {
+            // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in scurl_get_shared_cart_notice_html().
+            echo self::scurl_get_shared_cart_notice_html();
+        }
+
+        /**
+         * Print the shared cart notice above the Cart block, which fires none
+         * of the classic cart hooks.
+         *
+         * @param string $block_content Rendered block HTML.
+         * @param array  $block         Parsed block.
+         * @return string
+         */
+        public static function scurl_print_notice_before_cart_block( $block_content, $block ) {
+            if ( '' === self::$pending_notice || empty( $block['blockName'] ) || 'woocommerce/cart' !== $block['blockName'] ) {
+                return $block_content;
+            }
+
+            return self::scurl_get_shared_cart_notice_html() . $block_content;
+        }
+
+        /**
+         * Reload the page without the share parameter once the shared cart is
+         * in the session.
+         *
+         * Left in the address bar, the parameter restored the shared cart again
+         * on every refresh. WooCommerce's remove item and update cart actions
+         * also redirect back to the referring URL, so the recipient's edits
+         * were undone straight away.
+         *
+         * The session and cart cookies are saved on shutdown, which still runs
+         * after the redirect, as it does for WooCommerce's own add to cart
+         * redirect.
+         */
+        public static function scurl_redirect_after_shared_cart() {
+            if ( ! self::$shared_cart_applied ) {
+                return;
+            }
+
+            $method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( sanitize_key( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) : 'GET';
+
+            // Never redirect a form submission, it would lose the posted data.
+            if ( 'GET' !== $method && 'HEAD' !== $method ) {
+                return;
+            }
+
+            // add-to-cart is dropped too, as WooCommerce's own redirect does, so
+            // a link that also adds a product does not add it a second time.
+            $location = remove_query_arg( array( 'share', 'add-to-cart' ) );
+
+            wp_safe_redirect( wp_validate_redirect( $location, wc_get_cart_url() ) );
+            exit;
         }
 
         /**
@@ -362,7 +608,7 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
          * AJAX endpoint used to refresh the share URL after the cart changes.
          */
         public static function scurl_ajax_generate_share_link() {
-            check_ajax_referer( 'scurl_share_cart_nonce', 'nonce' );
+            check_ajax_referer( self::NONCE_ACTION, 'nonce' );
 
             $share_url = self::scurl_generate_share_url();
 
@@ -380,7 +626,10 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
          * was rendered, so pages without the widget stay untouched.
          */
         public static function scurl_render_email_modal() {
-            if ( ! self::$email_modal_needed ) {
+            // Always on the cart page. A cart that loads empty has no widget,
+            // but restoring a removed item brings the widget back over AJAX,
+            // and its email button needs the popup to be there.
+            if ( ! self::$email_modal_needed && ! ( function_exists( 'is_cart' ) && is_cart() ) ) {
                 return;
             }
 
@@ -389,6 +638,16 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
             $account_email = '';
             if ( is_user_logged_in() ) {
                 $account_email = wp_get_current_user()->user_email;
+            }
+
+            $can_email = self::scurl_can_email_cart();
+
+            // Guests who may not send are pointed at the My Account page, where
+            // WooCommerce shows its login and, when enabled, registration forms.
+            if ( ! $can_email ) {
+                $has_account_page = wc_get_page_id( 'myaccount' ) > 0;
+                $account_url      = $has_account_page ? wc_get_page_permalink( 'myaccount' ) : wp_login_url();
+                $can_register     = $has_account_page && 'yes' === get_option( 'woocommerce_enable_myaccount_registration', 'no' );
             }
             ?>
             <div class="scurl-email-modal" id="scurl-email-modal" hidden>
@@ -401,6 +660,28 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
                         </svg>
                     </button>
                     <h2 class="scurl-email-title" id="scurl-email-title"><?php esc_html_e( 'Email this cart', 'share-cart-for-woocommerce' ); ?></h2>
+                    <?php if ( ! $can_email ) : ?>
+                        <p class="scurl-email-intro">
+                            <?php
+                            if ( $can_register ) {
+                                esc_html_e( 'Please log in or create an account to email this cart.', 'share-cart-for-woocommerce' );
+                            } else {
+                                esc_html_e( 'Please log in to email this cart.', 'share-cart-for-woocommerce' );
+                            }
+                            ?>
+                        </p>
+                        <p class="scurl-email-submit-row">
+                            <a class="button scurl-email-login" href="<?php echo esc_url( $account_url ); ?>">
+                                <?php
+                                if ( $can_register ) {
+                                    esc_html_e( 'Log in or register', 'share-cart-for-woocommerce' );
+                                } else {
+                                    esc_html_e( 'Log in', 'share-cart-for-woocommerce' );
+                                }
+                                ?>
+                            </a>
+                        </p>
+                    <?php else : ?>
                     <p class="scurl-email-intro"><?php esc_html_e( 'We will send a link to this cart so you can pick up where you left off.', 'share-cart-for-woocommerce' ); ?></p>
                     <form class="scurl-email-form" novalidate>
                         <p class="scurl-email-field">
@@ -424,36 +705,147 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
                         </p>
                         <p class="scurl-email-feedback" role="status" aria-live="polite"></p>
                     </form>
+                    <?php endif; ?>
                 </div>
             </div>
             <?php
         }
 
         /**
-         * Count an email send against the visitor's hourly allowance.
+         * Count an email send against the sender's hourly allowance, and the
+         * store's when a store wide cap is set.
          *
-         * The endpoint is public, so without a cap it could be used to relay
-         * mail from the store to any address.
+         * Logged in customers are counted by account, which stays accurate
+         * behind a CDN or load balancer, where many visitors can share an IP.
+         * Guests, when allowed, can only be counted by IP address.
          *
-         * @return bool True when the visitor has used up their allowance.
+         * The store wide cap is off by default. On a busy store a fixed total
+         * would start turning away genuine customers, and with logins required
+         * every abuser needs an account of their own anyway.
+         *
+         * Counts are kept per clock hour. A single transient refreshed on every
+         * send would never expire while sends kept coming.
+         *
+         * Nothing here runs on page views, only when Send is pressed, so the
+         * transient writes stay negligible even on a high traffic store. With a
+         * persistent object cache they never touch the database.
+         *
+         * @return bool True when an allowance is used up.
          */
         private static function scurl_email_rate_limited() {
-            $ip  = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
-            $key = 'scurl_email_' . md5( $ip );
+            if ( is_user_logged_in() ) {
+                $sender = 'u' . get_current_user_id();
+            } else {
+                $ip = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
+
+                /**
+                 * Filter the guest IP address used for the per sender email cap.
+                 *
+                 * Only used when guests may email carts. Behind a proxy or CDN,
+                 * REMOTE_ADDR is the proxy's address, so guests share one
+                 * allowance. Return the real visitor IP from the header your
+                 * proxy sets, and only when the site is actually behind that
+                 * proxy, since the header can be forged otherwise.
+                 *
+                 * @param string $ip REMOTE_ADDR.
+                 */
+                $ip = (string) apply_filters( 'scurl_email_client_ip', $ip );
+
+                // An IPv6 visitor usually holds a whole /64, so count the network
+                // rather than the address, or rotating addresses resets the cap.
+                // IPv4 mapped addresses (::ffff:a.b.c.d) are left whole.
+                if ( false !== filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 ) ) {
+                    $packed = inet_pton( $ip );
+
+                    if ( false !== $packed && 0 !== strpos( $packed, str_repeat( "\0", 10 ) . "\xff\xff" ) ) {
+                        $ip = bin2hex( substr( $packed, 0, 8 ) ) . '/64';
+                    }
+                }
+
+                // A keyed hash, so the stored name cannot be turned back into the
+                // address the way a plain md5 of an IPv4 address can.
+                $sender = wp_hash( $ip );
+            }
+
+            $hour       = gmdate( 'YmdH' );
+            $sender_key = 'scurl_email_' . $hour . '_' . $sender;
+            $store_key  = 'scurl_email_' . $hour . '_store';
 
             /**
-             * Filter how many cart emails one visitor may send per hour.
+             * Filter how many cart emails one customer, or one guest IP
+             * address, may send per hour.
              *
-             * @param int $limit Default 5.
+             * @param int $limit Default 5. 0 removes the cap.
              */
             $limit = (int) apply_filters( 'scurl_email_rate_limit', 5 );
-            $count = (int) get_transient( $key );
 
-            if ( $limit > 0 && $count >= $limit ) {
+            /**
+             * Filter how many cart emails the whole store may send per hour.
+             *
+             * @param int $limit Default 0, no store wide cap.
+             */
+            $store_limit = (int) apply_filters( 'scurl_email_store_rate_limit', 0 );
+
+            $count       = (int) get_transient( $sender_key );
+            $store_count = $store_limit > 0 ? (int) get_transient( $store_key ) : 0;
+
+            if ( ( $limit > 0 && $count >= $limit ) || ( $store_limit > 0 && $store_count >= $store_limit ) ) {
                 return true;
             }
 
-            set_transient( $key, $count + 1, HOUR_IN_SECONDS );
+            set_transient( $sender_key, $count + 1, HOUR_IN_SECONDS );
+
+            if ( $store_limit > 0 ) {
+                set_transient( $store_key, $store_count + 1, HOUR_IN_SECONDS );
+            }
+
+            return false;
+        }
+
+        /**
+         * Whether the visitor's note contains a link or anything a mail client
+         * would turn into one.
+         *
+         * The note is sent from the store's own address, so a link in it would
+         * let anyone send a phishing message that appears to come from the
+         * store. Mail clients link bare domains and email addresses as well as
+         * full URLs, so those are refused too.
+         *
+         * @param string $message Sanitized note.
+         * @return bool
+         */
+        private static function scurl_message_has_link( $message ) {
+            // Invisible characters keep a link readable while splitting it so
+            // the patterns miss it, so they are removed before matching.
+            // Ideographic and full width full stops are deliberately not read
+            // as dots: they end ordinary sentences in Chinese and Japanese.
+            $text = preg_replace( '/[\x{00AD}\x{200B}-\x{200D}\x{2060}\x{FEFF}]/u', '', $message );
+
+            // A failed match means the text could not be read, for example
+            // invalid UTF-8 on a site with another charset. Refuse it rather
+            // than let it through unchecked.
+            if ( null === $text ) {
+                return true;
+            }
+
+            $patterns = array(
+                // Any scheme: http://, https://, ftp:// and so on.
+                '~\b[a-z][a-z0-9+.\-]*://~i',
+                // Bare IPv4 address.
+                '~\b\d{1,3}(?:\.\d{1,3}){3}\b~',
+                // Domain names, including www., IDNs and those inside an email
+                // address. \p{M} keeps scripts written with combining marks,
+                // such as Devanagari, inside the match.
+                '~[\p{L}\p{M}\p{N}\-]+(?:\.[\p{L}\p{M}\p{N}\-]+)*\.\p{L}[\p{L}\p{M}]+~iu',
+            );
+
+            foreach ( $patterns as $pattern ) {
+                // 1 is a match, false is an error. Both refuse the note.
+                if ( 0 !== preg_match( $pattern, $text ) ) {
+                    return true;
+                }
+            }
+
             return false;
         }
 
@@ -464,16 +856,26 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
          * from the request, so the form cannot be used to send arbitrary links.
          */
         public static function scurl_ajax_email_cart() {
-            check_ajax_referer( 'scurl_share_cart_nonce', 'nonce' );
+            check_ajax_referer( self::NONCE_ACTION, 'nonce' );
 
-            $email = isset( $_POST['email'] ) ? sanitize_email( wp_unslash( $_POST['email'] ) ) : '';
+            // The guest hook is not registered unless guests are allowed, so
+            // this only matters if that changes mid request. Checked anyway.
+            if ( ! self::scurl_can_email_cart() ) {
+                wp_send_json_error( array( 'message' => __( 'Please log in to email this cart.', 'share-cart-for-woocommerce' ) ) );
+            }
+
+            $email = isset( $_POST['email'] ) && is_string( $_POST['email'] ) ? sanitize_email( wp_unslash( $_POST['email'] ) ) : '';
 
             if ( '' === $email || ! is_email( $email ) ) {
                 wp_send_json_error( array( 'message' => __( 'Please enter a valid email address.', 'share-cart-for-woocommerce' ) ) );
             }
 
-            $message = isset( $_POST['message'] ) ? sanitize_textarea_field( wp_unslash( $_POST['message'] ) ) : '';
+            $message = isset( $_POST['message'] ) && is_string( $_POST['message'] ) ? sanitize_textarea_field( wp_unslash( $_POST['message'] ) ) : '';
             $message = trim( mb_substr( $message, 0, self::EMAIL_MESSAGE_MAX_LENGTH ) );
+
+            if ( '' !== $message && self::scurl_message_has_link( $message ) ) {
+                wp_send_json_error( array( 'message' => __( 'Please remove links and web addresses from the message.', 'share-cart-for-woocommerce' ) ) );
+            }
 
             $share_url = self::scurl_generate_share_url();
 
@@ -491,16 +893,19 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
             $subject = sprintf( __( 'Your cart from %s', 'share-cart-for-woocommerce' ), $site_name );
             $heading = __( 'Your saved cart', 'share-cart-for-woocommerce' );
 
-            $body = '';
-            if ( '' !== $message ) {
-                $body .= '<p>' . nl2br( esc_html( $message ) ) . '</p>';
-            }
-            $body .= '<p>' . esc_html(
+            $body = '<p>' . esc_html(
                 /* translators: %s: site name */
                 sprintf( __( 'Here is the link to your cart at %s. Open it to restore your items and continue shopping.', 'share-cart-for-woocommerce' ), $site_name )
             ) . '</p>';
             $body .= '<p><a href="' . esc_url( $share_url ) . '">' . esc_html__( 'View your cart', 'share-cart-for-woocommerce' ) . '</a></p>';
             $body .= '<p style="word-break:break-all;font-size:12px;">' . esc_html( $share_url ) . '</p>';
+
+            // The note comes after the store's own text and is labelled as the
+            // sender's, so it cannot pass for a message from the store.
+            if ( '' !== $message ) {
+                $body .= '<p style="margin-bottom:4px;"><strong>' . esc_html__( 'Note from the sender:', 'share-cart-for-woocommerce' ) . '</strong></p>';
+                $body .= '<div style="border-left:3px solid #dcdcde;padding-left:12px;margin:0 0 16px;">' . nl2br( esc_html( $message ) ) . '</div>';
+            }
 
             /**
              * Filter the cart email before it is sent.
@@ -532,14 +937,17 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
                 wp_send_json_error( array( 'message' => __( 'The email could not be sent. Please try again later.', 'share-cart-for-woocommerce' ) ) );
             }
 
-            wp_send_json_success( array( 'message' => __( 'Email sent. Check your inbox for the cart link.', 'share-cart-for-woocommerce' ) ) );
+            // Names the address rather than saying "check your inbox", since the
+            // cart may have gone to someone else.
+            /* translators: %s: recipient email address */
+            wp_send_json_success( array( 'message' => sprintf( __( 'Email sent to %s.', 'share-cart-for-woocommerce' ), $email ) ) );
         }
 
         public static function scurl_scripts_and_styles(){
             wp_enqueue_script('scurl-script', SCURL_PLUGIN_PATH . 'assets/js/scurl.js', array('jquery'), SCURL_VERSION, true);
             wp_localize_script('scurl-script', 'share_cart_ajax', array(
                 'ajax_url'    => admin_url('admin-ajax.php'),
-                'nonce'       => wp_create_nonce('scurl_share_cart_nonce'),
+                'nonce'       => wp_create_nonce( self::NONCE_ACTION ),
                 'share_title' => get_bloginfo( 'name' ),
                 'i18n'        => array(
                     'copied'      => __( 'Link copied to clipboard.', 'share-cart-for-woocommerce' ),

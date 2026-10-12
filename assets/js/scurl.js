@@ -218,11 +218,17 @@ jQuery(function ($) {
 
     function emailFocusable() {
         return $emailModal.find('.scurl-email-dialog')
-            .find('button, input, textarea')
+            .find('a[href], button, input, textarea')
             .filter(':visible:not(:disabled)');
     }
 
     function openEmailModal(opener) {
+        // Without the popup there is nothing to show, and locking the page
+        // scroll would leave it stuck.
+        if (!$emailModal.length) {
+            return;
+        }
+
         emailOpener = opener;
 
         $emailModal.find('.scurl-email-feedback').text('').removeClass('is-error is-success');
@@ -230,6 +236,13 @@ jQuery(function ($) {
         $(document.body).addClass('scurl-email-open');
 
         var $to = $emailModal.find('#scurl-email-to');
+
+        // Guests who may not send get a log in link instead of the form.
+        if (!$to.length) {
+            $emailModal.find('.scurl-email-login').trigger('focus');
+            return;
+        }
+
         ($to.val() ? $emailModal.find('#scurl-email-message') : $to).trigger('focus');
     }
 
@@ -295,7 +308,9 @@ jQuery(function ($) {
     });
 
     $(document).on('keydown', function (e) {
-        if ($emailModal.prop('hidden')) {
+        // .prop() on an empty set is undefined, not true, so check the popup
+        // exists before asking whether it is hidden.
+        if (!$emailModal.length || $emailModal.prop('hidden')) {
             return;
         }
 
@@ -315,7 +330,12 @@ jQuery(function ($) {
             var first = $items[0];
             var last = $items[$items.length - 1];
 
-            if (e.shiftKey && document.activeElement === first) {
+            // Clicking blank space in the dialog moves focus to the page body,
+            // from where Tab would leave the popup. Pull it back in.
+            if (!$.contains($emailModal[0], document.activeElement)) {
+                e.preventDefault();
+                (e.shiftKey ? last : first).focus();
+            } else if (e.shiftKey && document.activeElement === first) {
                 e.preventDefault();
                 last.focus();
             } else if (!e.shiftKey && document.activeElement === last) {
