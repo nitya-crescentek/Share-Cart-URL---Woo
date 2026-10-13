@@ -269,6 +269,10 @@ add_filter( 'scurl_email_client_ip', function ( $ip ) {
 } );
 ```
 
+= What happens to my data if I delete the plugin? =
+
+Deactivating the plugin keeps everything. Deleting it from the Plugins screen removes its settings, the email rate limit counters and the saved share links, on every site of a multisite network. Share links that were already sent stop working.
+
 = Which hooks are available for developers? =
 
 * `scurl_button_text` - filter the share button label
@@ -300,6 +304,7 @@ For support, please use the WordPress.org support forum for this plugin. We moni
 * Security: the emailed link is always built on the server from the visitor's own cart.
 * Security: links, web addresses and email addresses are refused in the email note, and the note is shown below the cart link, labelled as written by the sender, so the form cannot be used to send phishing messages in the store's name.
 * Security: sending is limited to 5 emails per hour per customer account, or per IP address for guests when they are allowed (filterable with `scurl_email_rate_limit`). An optional store-wide hourly limit can be set with `scurl_email_store_rate_limit`. Stores behind a proxy that allow guests can supply the real visitor IP with `scurl_email_client_ip`.
+* Added: deleting the plugin now removes its settings, email rate limit counters and saved share links. Deactivating keeps them.
 * Fixed: opening a share link now loads the cart and then reloads the page without the share parameter. Previously the shared cart was restored again on every refresh, and on the classic cart removing an item or updating the cart brought the shared cart straight back.
 
 = 1.3 =
