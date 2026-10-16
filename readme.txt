@@ -4,7 +4,7 @@ Donate link: https://buymeacoffee.com/nityasaha
 Tags: woocommerce, cart, share, shopping cart, share-cart
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4
+Stable tag: 1.5
 Requires PHP: 7.4
 Requires plugins: woocommerce
 License: GPLv2 or later
@@ -29,6 +29,7 @@ In today's social shopping environment, customers want to share their finds with
 = Key Features =
 
 * One-Click Cart Sharing - Generate shareable URLs instantly from the cart page
+* Replace or Add - Optionally let customers choose whether a shared cart replaces their cart or is added to it
 * Email This Cart - Optional button that emails the cart link, with a personal note, using your store's WooCommerce email template
 * Native Share - Optional button that opens the device share sheet on supporting browsers
 * Flexible Button Placement - Choose from multiple hook positions to match your theme
@@ -56,13 +57,14 @@ In today's social shopping environment, customers want to share their finds with
 3. Clicking the button generates a unique shareable URL
 4. The URL can be shared via messaging apps or social media, or sent from your store with the Email this cart button
 5. Recipients click the link and see the exact cart contents
-6. The shared products are loaded into the recipient's cart, replacing what was in it, and a notice confirms it (this can be turned off)
+6. The shared products are loaded into the recipient's cart. If you let customers choose and they already have items, a popup asks whether to replace their cart or add to it
+7. A notice confirms what happened (this can be turned off)
 
 = Email This Cart =
 
-Turn on Email Cart Button under WooCommerce > Settings > Share Cart. When a customer clicks the share button, an envelope icon appears beside the copy icon. It opens a popup where the customer enters an email address and an optional note of up to 500 characters, and the cart link is sent to that address.
+Turn on Email Cart Button under WooCommerce > Settings > Share Cart > Buttons. When a customer clicks the share button, an envelope icon appears beside the copy icon. It opens a popup where the customer enters an email address and an optional note of up to 500 characters, and the cart link is sent to that address.
 
-* By default only logged in customers can send. Guests see a link to log in or register on the My Account page instead of the form. To let guests send as well, change the Who Can Email Carts setting
+* By default only logged in customers can send. Guests see a link to log in or register on the My Account page instead of the form. To let guests send as well, change Who Can Email Carts under Share Cart > Advanced
 * Logged in customers can send the link to their own account email with one click, or choose Other to send it to someone else
 * The email is sent through WooCommerce, using the From name and address, header image, colours and footer text set in WooCommerce > Settings > Emails
 * The link is always built on the server from the customer's own cart, so the form cannot be used to send any other link
@@ -74,16 +76,26 @@ Developers can change the subject, heading and body of the email with the `scurl
 
 = Configuration Options =
 
-Navigate to WooCommerce > Settings > Share Cart to access:
+Navigate to WooCommerce > Settings > Share Cart. The settings are split over three pages, linked at the top of the tab.
+
+**Buttons**
 
 * Button Position - Select from multiple WooCommerce cart hooks
-* Button Text - Change the button label without writing any code
-* Button Display - Control when and where the share button appears
 * Native Share Button - Show a share sheet button on browsers that support it (off by default)
-* Shared Cart Notice - Show a notice when a shared cart link is opened (on by default)
 * Email Cart Button - Let customers email the cart link to themselves or someone else (off by default)
+
+**Advanced**
+
+* Let Customers Choose - Ask customers who already have items whether to replace their cart or add the shared items to it (off by default, so a shared cart replaces theirs)
+* Quantity When Adding - For an item in both carts, keep the larger quantity (default) or combine the quantities
 * Who Can Email Carts - Logged in customers only (default), or everyone including guests
-* Easy Customization - Style the button with custom CSS
+
+**Messages**
+
+* Button Text - Change the button label without writing any code
+* Shared Cart Notice - Show a notice when a shared cart link is opened (on by default)
+
+The button can also be styled with custom CSS.
 
 Available button positions include:
 
@@ -132,7 +144,7 @@ Note: This plugin requires WooCommerce to be installed and active. If WooCommerc
 = First-Time Setup =
 
 1. After activation, visit WooCommerce > Settings
-2. Click on the Share Cart tab
+2. Click on the Share Cart tab, which opens on its Buttons page
 3. Select your preferred button position from the dropdown
 4. Click Save Changes
 5. Visit your cart page to see the share button in action
@@ -141,7 +153,7 @@ Note: This plugin requires WooCommerce to be installed and active. If WooCommerc
 
 = How do I change the position of the share cart button? =
 
-Navigate to WooCommerce > Settings > Share Cart after activation. Select your desired hook position from the dropdown menu and save your settings. You can choose from multiple positions including before/after cart table, before/after cart totals, and more.
+Navigate to WooCommerce > Settings > Share Cart > Buttons after activation. Select your desired hook position from the dropdown menu and save your settings. You can choose from multiple positions including before/after cart table, before/after cart totals, and more.
 
 = What happens if WooCommerce is not active? =
 
@@ -161,11 +173,30 @@ Shared cart URLs do not expire on a fixed schedule. They are stored in the serve
 
 = Can recipients modify the shared cart? =
 
-Yes. The shared products replace the recipient's cart, and they can then change quantities, remove items or add more products like any other cart. Opening the same link again loads the shared cart again.
+Yes. Once the shared products are in the recipient's cart, they can change quantities, remove items or add more products like any other cart.
+
+= Can a shared cart be added to the customer's cart instead of replacing it? =
+
+Yes, if you let customers choose. Turn on Let Customers Choose under WooCommerce > Settings > Share Cart > Advanced. When a customer who already has items in their cart opens a shared cart link, a popup lists what is in the shared cart and offers:
+
+* Replace my cart - their cart becomes exactly the shared cart, coupons included.
+* Add to my cart - the shared items are added, and they keep their own items and coupons.
+* Keep my current cart - nothing changes. Closing the popup does the same, and opening the link again asks again.
+
+If their cart is empty, or already the same as the shared cart, it simply loads without asking. With the setting off, a shared cart always replaces the customer's cart.
+
+When a customer adds a shared cart, Quantity When Adding decides what happens to an item that is in both carts:
+
+* Keep the larger quantity - the default. Adding the same link twice never doubles anything, which suits customers who email a cart to themselves and open it on another device.
+* Combine quantities - the two quantities are added together, which suits people pooling a group order.
+
+Quantities never go above what the product allows: 1 for products sold individually, and the stock level when stock is managed without backorders. Coupons from the shared cart are applied on top of the customer's own through WooCommerce's normal checks. A shared coupon that cannot be used, for example because it has expired or cannot be combined with the customer's coupon, is skipped and the notice says so.
+
+The popup works without JavaScript, and each answer is accepted only once, so going back and submitting it again does not add the shared cart twice.
 
 = Can I turn off the "shared cart loaded" notice? =
 
-Yes. When someone opens a share link, a notice confirms the shared cart was loaded and says whether it replaced the items already in their cart. Turn it off with Shared Cart Notice under WooCommerce > Settings > Share Cart, or change the wording with the `scurl_shared_cart_notice_text` filter.
+Yes. When someone opens a share link, a notice says what happened to their cart: that the shared cart was loaded, replaced their items, was added to their cart, or that their cart already had everything in it. Turn it off with Shared Cart Notice under WooCommerce > Settings > Share Cart > Messages, or change the wording with the `scurl_shared_cart_notice_text` filter.
 
 = Does this work with variable products? =
 
@@ -185,9 +216,9 @@ The share button only appears when there are items in the cart, preventing confu
 
 = How do I let customers email their cart? =
 
-Go to WooCommerce > Settings > Share Cart, turn on Email Cart Button and save. When a customer clicks the share button, an envelope icon appears next to the copy icon. Clicking it opens a popup where they enter an email address and an optional note, and the cart link is sent to that address.
+Go to WooCommerce > Settings > Share Cart > Buttons, turn on Email Cart Button and save. When a customer clicks the share button, an envelope icon appears next to the copy icon. Clicking it opens a popup where they enter an email address and an optional note, and the cart link is sent to that address.
 
-By default only logged in customers can send. Guests who open the popup see a link to log in or register on the My Account page. To let guests send as well, set Who Can Email Carts to "Everyone, including guests". That means anyone can use your store to email a cart link to any address, so keep the rate limit in place.
+By default only logged in customers can send. Guests who open the popup see a link to log in or register on the My Account page. To let guests send as well, set Who Can Email Carts on the Advanced page to "Everyone, including guests". That means anyone can use your store to email a cart link to any address, so keep the rate limit in place.
 
 = How can I customize the cart email? =
 
@@ -281,7 +312,7 @@ Deactivating the plugin keeps everything. Deleting it from the Plugins screen re
 * `scurl_email_rate_limit` - filter how many cart emails one customer, or one guest IP address, may send per hour. Default 5.
 * `scurl_email_store_rate_limit` - filter how many cart emails the whole store may send per hour. Default 0, no limit.
 * `scurl_email_client_ip` - filter the guest IP address used for the limit when guests may send
-* `scurl_shared_cart_notice_text` - filter the notice shown when a shared cart is loaded. Receives the text and whether it replaced other items. Return plain text, since the notice is escaped before it is shown.
+* `scurl_shared_cart_notice_text` - filter the notice shown when a shared cart is opened. Receives the text, whether it replaced other items, and what happened (`loaded`, `replaced`, `merged` or `unchanged`). Return plain text, since the notice is escaped before it is shown.
 
 = How do I get support? =
 
@@ -293,8 +324,18 @@ For support, please use the WordPress.org support forum for this plugin. We moni
 2. Share Cart Settings Tab under WooCommerce settings
 3. Cart Page with generated link and buttons.
 4. Email this cart popup
+5. Popup asking whether to replace the cart or add the shared cart to it
 
 == Changelog ==
+
+= 1.5 =
+* Added: Let Customers Choose setting, off by default. When on, a customer who already has items in their cart and opens a shared cart link sees a popup listing the shared items, and chooses to replace their cart, add the shared items to it, or keep their cart as it is.
+* Added: Quantity When Adding setting, to keep the larger quantity or combine quantities for items in both carts.
+* Added: when adding, quantities are capped at what the product allows (1 for products sold individually, the stock level when stock is managed without backorders), and a logged in customer's saved cart is kept.
+* Added: when adding, the customer keeps their own coupons and shared coupons are applied through WooCommerce's checks, so an individual use coupon can never stack with others. Coupons that cannot be applied are skipped and mentioned in the notice.
+* Added: the popup works without JavaScript, and each answer is accepted only once, so submitting it again cannot add the shared cart twice.
+* Changed: the `scurl_shared_cart_notice_text` filter now also receives what happened to the cart.
+* Changed: the Share Cart settings are split into three pages, Buttons, Advanced and Messages, linked at the top of the tab like WooCommerce's own settings.
 
 = 1.4 =
 * Added: "Email this cart" button. When enabled in settings, an envelope icon appears beside the share icon and opens a popup where customers enter their email address and an optional message, then receive the cart link by email. Off by default.
@@ -351,6 +392,9 @@ For support, please use the WordPress.org support forum for this plugin. We moni
 * Translation-ready code
 
 == Upgrade Notice ==
+
+= 1.5 =
+Customers can now be asked whether to replace their cart or add a shared cart to it. The option is off by default, so nothing changes until you turn it on.
 
 = 1.4 =
 Adds an optional Email this cart button, off by default, and a notice when a shared cart is opened. Also fixes shared carts being restored again on refresh, which undid the recipient's changes.

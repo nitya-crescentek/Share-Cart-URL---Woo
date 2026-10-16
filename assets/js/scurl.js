@@ -216,8 +216,14 @@ jQuery(function ($) {
     var $emailModal = $('#scurl-email-modal');
     var emailOpener = null;
 
-    function emailFocusable() {
-        return $emailModal.find('.scurl-email-dialog')
+    /**
+     * Elements Tab can reach inside a popup.
+     *
+     * @param {jQuery} $modal
+     * @return {jQuery}
+     */
+    function focusableIn($modal) {
+        return $modal.find('.scurl-email-dialog')
             .find('a[href], button, input, textarea')
             .filter(':visible:not(:disabled)');
     }
@@ -307,21 +313,62 @@ jQuery(function ($) {
         closeEmailModal();
     });
 
+    /**
+     * "Replace or add" popup, printed by the server on the page view after a
+     * shared cart link when the customer already has a different cart.
+     *
+     * It is printed visible, and every button submits its form, so it works
+     * without JavaScript. Here, closing it or keeping the cart just hides it:
+     * the server already dropped the question when it printed the popup.
+     */
+    var $choiceModal = $('#scurl-choice-modal');
+
+    function closeChoiceModal() {
+        $choiceModal.prop('hidden', true);
+        $(document.body).removeClass('scurl-email-open');
+    }
+
+    if ($choiceModal.length && !$choiceModal.prop('hidden')) {
+        $(document.body).addClass('scurl-email-open');
+        $choiceModal.find('.scurl-choice-btn').first().trigger('focus');
+    }
+
+    $choiceModal.on('click', '[data-scurl-close]', function (e) {
+        e.preventDefault();
+        closeChoiceModal();
+    });
+
+    /**
+     * The popup on screen, if any. The choice popup and the email popup are
+     * never open together, but either can be.
+     *
+     * @return {jQuery}
+     */
+    function openModal() {
+        return $emailModal.add($choiceModal).filter(function () {
+            return !this.hidden;
+        }).first();
+    }
+
     $(document).on('keydown', function (e) {
-        // .prop() on an empty set is undefined, not true, so check the popup
-        // exists before asking whether it is hidden.
-        if (!$emailModal.length || $emailModal.prop('hidden')) {
+        var $modal = openModal();
+
+        if (!$modal.length) {
             return;
         }
 
         if (e.key === 'Escape') {
-            closeEmailModal();
+            if ($modal.is($choiceModal)) {
+                closeChoiceModal();
+            } else {
+                closeEmailModal();
+            }
             return;
         }
 
         // Keep Tab inside the popup while it is open.
         if (e.key === 'Tab') {
-            var $items = emailFocusable();
+            var $items = focusableIn($modal);
 
             if (!$items.length) {
                 return;
@@ -332,7 +379,7 @@ jQuery(function ($) {
 
             // Clicking blank space in the dialog moves focus to the page body,
             // from where Tab would leave the popup. Pull it back in.
-            if (!$.contains($emailModal[0], document.activeElement)) {
+            if (!$.contains($modal[0], document.activeElement)) {
                 e.preventDefault();
                 (e.shiftKey ? last : first).focus();
             } else if (e.shiftKey && document.activeElement === first) {
