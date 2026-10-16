@@ -19,6 +19,8 @@ function scurl_uninstall_site() {
         'scurl_button_position',
         'scurl_button_text',
         'scurl_native_share_enabled',
+        'scurl_shared_cart_choice',
+        'scurl_shared_cart_merge_qty',
         'scurl_shared_cart_notice',
         'scurl_email_cart_enabled',
         'scurl_email_cart_access',

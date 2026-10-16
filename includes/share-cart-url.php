@@ -57,12 +57,71 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
         private static $email_modal_needed = false;
 
         /**
-         * Whether a shared cart was restored on this request, so the page can
-         * be reloaded without the share parameter.
+         * Whether a shared cart was replaced into or added to the visitor's
+         * cart on this request, so the notice can be queued.
          *
          * @var bool
          */
         private static $shared_cart_applied = false;
+
+        /**
+         * Whether this request handled a share link or an answer from the
+         * replace or add popup, so the page is reloaded with a clean URL.
+         *
+         * @var bool
+         */
+        private static $reload_needed = false;
+
+        /**
+         * Whether this request is the popup's form being submitted. That POST
+         * is reloaded as a GET, unlike any other form submission.
+         *
+         * @var bool
+         */
+        private static $choice_submitted = false;
+
+        /**
+         * The replace or add question shown on this page view: the share hash
+         * and the shared items to list.
+         *
+         * @var array
+         */
+        private static $choice_popup = array();
+
+        /**
+         * What opening the shared cart did to the visitor's cart: 'loaded',
+         * 'replaced', 'merged' or 'unchanged'. Settled once the cart has
+         * loaded, since merged coupons are only applied then.
+         *
+         * @var string
+         */
+        private static $shared_cart_result = '';
+
+        /**
+         * Shared coupons still to be applied after a merge, and whether that
+         * last step has run.
+         *
+         * @var array
+         */
+        private static $pending_coupons = array();
+
+        /**
+         * @var bool
+         */
+        private static $shared_cart_finished = false;
+
+        /**
+         * Session key holding a share hash whose replace or add question has
+         * not been shown yet.
+         */
+        const PENDING_SESSION_KEY = 'scurl_pending_share';
+
+        /**
+         * Session key holding the share hash of the question on screen. The
+         * popup's answer is only accepted for this hash, once, so going back
+         * and submitting it again cannot add the shared cart a second time.
+         */
+        const ASKED_SESSION_KEY = 'scurl_asked_share';
 
         /**
          * Shared cart notice taken from the session for this page view, and
@@ -114,9 +173,12 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
             add_shortcode( 'share_cart_url', array( __CLASS__, 'scurl_shortcode' ) );
 
             add_action( 'woocommerce_load_cart_from_session', array( __CLASS__, 'scurl_apply_shared_cart_session' ), 1 );
+            add_action( 'woocommerce_cart_loaded_from_session', array( __CLASS__, 'scurl_finish_shared_cart' ) );
             // Priority 1 runs after the wc-ajax handler (0) and before canonical redirects.
             add_action( 'template_redirect', array( __CLASS__, 'scurl_redirect_after_shared_cart' ), 1 );
             add_action( 'template_redirect', array( __CLASS__, 'scurl_take_shared_cart_notice' ), 20 );
+            add_action( 'template_redirect', array( __CLASS__, 'scurl_take_pending_choice' ), 20 );
+            add_action( 'wp_footer', array( __CLASS__, 'scurl_render_choice_modal' ) );
             // Before WooCommerce prints its own notices on the classic cart (10).
             add_action( 'woocommerce_before_cart', array( __CLASS__, 'scurl_print_shared_cart_notice' ), 5 );
             // After the widget filter (10), so the notice sits above the widget.
@@ -143,6 +205,27 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
          */
         public static function scurl_is_email_enabled() {
             return 'yes' === get_option( 'scurl_email_cart_enabled', 'no' );
+        }
+
+        /**
+         * Whether a customer who already has items in their cart is asked to
+         * replace it or add the shared cart to it. Off by default, so a shared
+         * cart simply replaces theirs.
+         *
+         * @return bool
+         */
+        public static function scurl_customers_can_choose() {
+            return 'yes' === get_option( 'scurl_shared_cart_choice', 'no' );
+        }
+
+        /**
+         * Whether adding a shared cart combines the quantities of items in both
+         * carts, rather than keeping the larger one.
+         *
+         * @return bool
+         */
+        public static function scurl_merge_combines() {
+            return 'combine' === get_option( 'scurl_shared_cart_merge_qty', 'larger' );
         }
 
         /**
@@ -222,9 +305,17 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
         }
 
         /**
-         * Restore a shared cart into the current session.
+         * Handle a shared cart link, or the visitor's answer to the replace or
+         * add question, before WooCommerce reads the cart from the session.
+         *
+         * A link replaces the visitor's cart. When customers may choose and
+         * the visitor already has a different cart, nothing changes yet: the
+         * question is kept in the session and asked on the next page view.
          */
         public static function scurl_apply_shared_cart_session() {
+            if ( self::scurl_handle_choice() ) {
+                return;
+            }
 
             // An array, as in ?share[]=1, made sanitize_file_name() throw a
             // TypeError, so any visitor could crash any page.
@@ -235,55 +326,315 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
 
             // phpcs:ignore WordPress.Security.NonceVerification.Recommended
             $hash = sanitize_file_name( wp_unslash( $_REQUEST['share'] ) );
+            $cart = self::scurl_read_shared_cart( $hash );
 
-            // Stored hashes are wp_hash() output: 32 hexadecimal characters.
-            if ( ! preg_match( '/^[a-f0-9]{32}$/', $hash ) ) {
+            if ( null === $cart ) {
                 return;
+            }
+
+            $previous_cart = self::scurl_get_previous_cart();
+            $shared_items  = isset( $cart['cart'] ) && is_array( $cart['cart'] ) ? $cart['cart'] : array();
+
+            // There is only a choice to make when the visitor has a cart of
+            // their own that differs from the shared one.
+            if ( self::scurl_customers_can_choose() && ! empty( $previous_cart ) && self::scurl_cart_signature( $previous_cart ) !== self::scurl_cart_signature( $shared_items ) ) {
+                WC()->session->set( self::PENDING_SESSION_KEY, $hash );
+                self::$reload_needed = true;
+                return;
+            }
+
+            self::scurl_replace_cart( $cart, $previous_cart );
+        }
+
+        /**
+         * Apply the visitor's answer from the replace or add popup.
+         *
+         * The popup posts the share hash with a nonce tied to the visitor's
+         * session. It is a form rather than links, so nothing a browser
+         * prefetches can change the cart.
+         *
+         * @return bool Whether this request was an answer from the popup.
+         */
+        private static function scurl_handle_choice() {
+            // phpcs:disable WordPress.Security.NonceVerification.Missing -- The nonce is verified below, once the hash it is tied to is known.
+            if ( ! isset( $_POST['scurl_share_choice'], $_POST['scurl_share'], $_POST['scurl_choice_nonce'] )
+                || ! is_string( $_POST['scurl_share_choice'] ) || ! is_string( $_POST['scurl_share'] ) || ! is_string( $_POST['scurl_choice_nonce'] ) ) {
+                return false;
+            }
+
+            $choice = sanitize_key( wp_unslash( $_POST['scurl_share_choice'] ) );
+            $hash   = sanitize_key( wp_unslash( $_POST['scurl_share'] ) );
+            $nonce  = sanitize_key( wp_unslash( $_POST['scurl_choice_nonce'] ) );
+            // phpcs:enable WordPress.Security.NonceVerification.Missing
+
+            // Reload whatever the answer, so a refresh does not post it again.
+            self::$reload_needed    = true;
+            self::$choice_submitted = true;
+
+            if ( ! wp_verify_nonce( $nonce, self::NONCE_ACTION . '-choice-' . $hash ) || ! self::scurl_customers_can_choose() ) {
+                return true;
+            }
+
+            // One answer per question asked.
+            if ( WC()->session->get( self::ASKED_SESSION_KEY ) !== $hash ) {
+                return true;
+            }
+
+            WC()->session->set( self::ASKED_SESSION_KEY, null );
+
+            // "Keep my current cart", or anything unexpected, leaves it alone.
+            if ( 'replace' !== $choice && 'add' !== $choice ) {
+                return true;
+            }
+
+            $cart = self::scurl_read_shared_cart( $hash );
+
+            if ( null === $cart ) {
+                return true;
+            }
+
+            if ( 'add' === $choice ) {
+                self::scurl_merge_cart( $cart, self::scurl_get_previous_cart() );
+            } else {
+                self::scurl_replace_cart( $cart, self::scurl_get_previous_cart() );
+            }
+
+            return true;
+        }
+
+        /**
+         * Read a stored shared cart.
+         *
+         * @param string $hash Share hash from the link.
+         * @return array|null The stored session data, or null when the hash is
+         *                    malformed or the file is missing or unreadable.
+         */
+        private static function scurl_read_shared_cart( $hash ) {
+            // Stored hashes are wp_hash() output: 32 hexadecimal characters.
+            if ( ! is_string( $hash ) || ! preg_match( '/^[a-f0-9]{32}$/', $hash ) ) {
+                return null;
             }
 
             $file = get_temp_dir() . $hash;
 
             if ( ! file_exists( $file ) ) {
-                return;
+                return null;
             }
 
             // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_get_contents
             $contents = @file_get_contents( $file );
             if ( false === $contents || '' === $contents ) {
-                return;
+                return null;
             }
 
             // allowed_classes => false prevents PHP object injection from a
             // crafted file, which matters on hosts with a shared temp directory.
             $cart = unserialize( $contents, array( 'allowed_classes' => false ) );
 
-            if ( ! is_array( $cart ) ) {
-                return;
-            }
+            return is_array( $cart ) ? $cart : null;
+        }
 
-            // Read before the session is overwritten, for the notice below.
+        /**
+         * The visitor's cart items as they stand before a shared cart is
+         * applied.
+         *
+         * A logged in customer starting a new session has no session cart
+         * yet. WooCommerce would load their saved cart next, so that is the
+         * cart the shared one replaces or is added to. Adding to the session
+         * also keeps the saved items, which would otherwise be lost.
+         *
+         * @return array Cart items, keyed by cart item key.
+         */
+        private static function scurl_get_previous_cart() {
             $previous_cart = WC()->session->get( 'cart' );
 
-            // A logged in customer starting a new session has no session cart
-            // yet. WooCommerce would load their saved cart next, and the shared
-            // cart now replaces that instead, so it counts as the previous cart.
             if ( empty( $previous_cart ) && is_user_logged_in() && apply_filters( 'woocommerce_persistent_cart_enabled', true ) ) {
                 $saved_cart    = get_user_meta( get_current_user_id(), '_woocommerce_persistent_cart_' . get_current_blog_id(), true );
                 $previous_cart = isset( $saved_cart['cart'] ) ? $saved_cart['cart'] : array();
             }
 
-            $shared_items = isset( $cart['cart'] ) ? $cart['cart'] : array();
-            $replaced     = ! empty( $previous_cart ) && self::scurl_cart_signature( $previous_cart ) !== self::scurl_cart_signature( $shared_items );
+            return is_array( $previous_cart ) ? $previous_cart : array();
+        }
 
+        /**
+         * Make the visitor's cart exactly the shared cart, coupons included.
+         *
+         * @param array $cart          Stored shared cart session data.
+         * @param array $previous_cart Visitor's cart items before the change.
+         */
+        private static function scurl_replace_cart( $cart, $previous_cart ) {
             foreach ( self::$session_cart_keys as $key ) {
                 if ( array_key_exists( $key, $cart ) ) {
                     WC()->session->set( $key, $cart[ $key ] );
                 }
             }
 
-            self::$shared_cart_applied = true;
+            $shared_items = isset( $cart['cart'] ) && is_array( $cart['cart'] ) ? $cart['cart'] : array();
+            $replaced     = ! empty( $previous_cart ) && self::scurl_cart_signature( $previous_cart ) !== self::scurl_cart_signature( $shared_items );
 
-            self::scurl_add_shared_cart_notice( $replaced );
+            self::$shared_cart_result  = $replaced ? 'replaced' : 'loaded';
+            self::$shared_cart_applied = true;
+            self::$reload_needed       = true;
+        }
+
+        /**
+         * Add the shared cart to the visitor's cart.
+         *
+         * The visitor keeps their own coupons. The shared ones are applied
+         * through WooCommerce once the cart has loaded.
+         *
+         * @param array $cart          Stored shared cart session data.
+         * @param array $previous_cart Visitor's cart items before the change.
+         */
+        private static function scurl_merge_cart( $cart, $previous_cart ) {
+            // Adding to an empty cart is the same as replacing it, and keeps the
+            // shared cart exactly as it was, coupons included.
+            if ( empty( $previous_cart ) ) {
+                self::scurl_replace_cart( $cart, $previous_cart );
+                return;
+            }
+
+            $shared_items = isset( $cart['cart'] ) && is_array( $cart['cart'] ) ? $cart['cart'] : array();
+            $merged       = self::scurl_merge_cart_items( $previous_cart, $shared_items, self::scurl_merge_combines() );
+
+            WC()->session->set( 'cart', $merged );
+
+            // Without stored totals WooCommerce recalculates them once the cart
+            // has loaded, which is after the shared coupons are applied.
+            WC()->session->set( 'cart_totals', null );
+
+            $current_coupons       = array_map( 'wc_format_coupon_code', (array) WC()->session->get( 'applied_coupons', array() ) );
+            $shared_coupons        = isset( $cart['applied_coupons'] ) ? array_map( 'wc_format_coupon_code', (array) $cart['applied_coupons'] ) : array();
+            self::$pending_coupons = array_values( array_diff( $shared_coupons, $current_coupons ) );
+
+            self::$shared_cart_result  = self::scurl_cart_signature( $merged ) === self::scurl_cart_signature( $previous_cart ) ? 'unchanged' : 'merged';
+            self::$shared_cart_applied = true;
+            self::$reload_needed       = true;
+        }
+
+        /**
+         * Add the shared items to the visitor's cart.
+         *
+         * Items only in the shared cart are copied as they are, keeping any
+         * add-on data, as replacing does. An item in both carts, matched by its
+         * cart item key, keeps the visitor's line with either the larger of the
+         * two quantities or both added together.
+         *
+         * WooCommerce does not correct quantities when it loads a cart, it only
+         * blocks checkout with an error, so a raised quantity is capped at what
+         * the product allows: 1 when sold individually, and the stock level
+         * when stock is managed without backorders. It never drops below what
+         * the visitor already had.
+         *
+         * @param array $current Visitor's cart items, keyed by cart item key.
+         * @param array $shared  Shared cart items, keyed by cart item key.
+         * @param bool  $combine Add quantities together rather than keep the larger.
+         * @return array
+         */
+        private static function scurl_merge_cart_items( $current, $shared, $combine ) {
+            $merged = is_array( $current ) ? $current : array();
+
+            foreach ( $shared as $key => $item ) {
+                if ( ! is_array( $item ) || empty( $item['product_id'] ) || empty( $item['quantity'] ) ) {
+                    continue;
+                }
+
+                if ( ! isset( $merged[ $key ] ) ) {
+                    $merged[ $key ] = $item;
+                    continue;
+                }
+
+                $have     = isset( $merged[ $key ]['quantity'] ) ? (float) $merged[ $key ]['quantity'] : 0;
+                $quantity = $combine ? $have + (float) $item['quantity'] : max( $have, (float) $item['quantity'] );
+
+                if ( $quantity > $have ) {
+                    $product = wc_get_product( ! empty( $item['variation_id'] ) ? $item['variation_id'] : $item['product_id'] );
+                    $max     = $product ? (float) $product->get_max_purchase_quantity() : -1;
+
+                    if ( $max > 0 ) {
+                        $quantity = max( $have, min( $quantity, $max ) );
+                    }
+                }
+
+                $merged[ $key ]['quantity'] = wc_stock_amount( $quantity );
+            }
+
+            return $merged;
+        }
+
+        /**
+         * Finish opening a shared cart once WooCommerce has loaded it: apply the
+         * shared coupons after a merge, then queue the notice.
+         *
+         * @param WC_Cart $cart Loaded cart.
+         */
+        public static function scurl_finish_shared_cart( $cart = null ) {
+            if ( ! self::$shared_cart_applied || self::$shared_cart_finished ) {
+                return;
+            }
+
+            self::$shared_cart_finished = true;
+
+            $failed_coupons = 0;
+
+            if ( ! empty( self::$pending_coupons ) ) {
+                $cart = $cart instanceof WC_Cart ? $cart : WC()->cart;
+
+                list( $applied_coupons, $failed_coupons ) = self::scurl_apply_shared_coupons( $cart, self::$pending_coupons );
+
+                self::$pending_coupons = array();
+
+                if ( $applied_coupons > 0 && 'unchanged' === self::$shared_cart_result ) {
+                    self::$shared_cart_result = 'merged';
+                }
+            }
+
+            self::scurl_add_shared_cart_notice( self::$shared_cart_result, $failed_coupons );
+        }
+
+        /**
+         * Apply the shared cart's coupons on top of the visitor's own.
+         *
+         * Done through WooCommerce, so validity, usage limits and individual
+         * use rules all apply. Copying the codes straight into the session
+         * would let an individual use coupon stack with others.
+         *
+         * A shared individual use coupon is skipped when the visitor already
+         * has a coupon, because applying it would remove theirs.
+         *
+         * WooCommerce's own messages from these calls are dropped. With a
+         * classic theme the Cart block never prints them, so they would turn
+         * up later on another page. The shared cart notice reports failures.
+         *
+         * @param WC_Cart $cart  Loaded cart.
+         * @param array   $codes Coupon codes the visitor does not have yet.
+         * @return array Number of coupons applied, and number that failed.
+         */
+        private static function scurl_apply_shared_coupons( $cart, $codes ) {
+            $applied = 0;
+            $failed  = 0;
+            $notices = function_exists( 'wc_get_notices' ) ? wc_get_notices() : null;
+
+            foreach ( $codes as $code ) {
+                $coupon = new WC_Coupon( $code );
+
+                if ( $coupon->get_individual_use() && ! empty( $cart->get_applied_coupons() ) ) {
+                    $failed++;
+                    continue;
+                }
+
+                if ( $cart->apply_coupon( $code ) ) {
+                    $applied++;
+                } else {
+                    $failed++;
+                }
+            }
+
+            if ( is_array( $notices ) ) {
+                wc_set_notices( $notices );
+            }
+
+            return array( $applied, $failed );
         }
 
         /**
@@ -310,8 +661,8 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
         }
 
         /**
-         * Tell the visitor the shared cart was loaded, and whether it replaced
-         * the items already in their cart, since that happens silently.
+         * Tell the visitor what opening the shared cart did to their cart,
+         * since replacing or merging happens silently.
          *
          * The text is kept in the session, so it survives the redirect that
          * strips the share parameter, and is printed on the next page view.
@@ -320,24 +671,44 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
          * Cart block never prints that queue, so the notice would surface later
          * on some unrelated page instead.
          *
-         * @param bool $replaced Whether the visitor's cart held other items.
+         * @param string $result         'loaded', 'replaced', 'merged' or 'unchanged'.
+         * @param int    $failed_coupons Shared coupons that could not be applied.
          */
-        private static function scurl_add_shared_cart_notice( $replaced ) {
+        private static function scurl_add_shared_cart_notice( $result, $failed_coupons = 0 ) {
             if ( 'yes' !== get_option( 'scurl_shared_cart_notice', 'yes' ) ) {
                 return;
             }
 
-            $notice = $replaced
-                ? __( 'The shared cart has been loaded and has replaced the items that were in your cart.', 'share-cart-for-woocommerce' )
-                : __( 'The shared cart has been loaded.', 'share-cart-for-woocommerce' );
+            switch ( $result ) {
+                case 'replaced':
+                    $notice = __( 'The shared cart has been loaded and has replaced the items that were in your cart.', 'share-cart-for-woocommerce' );
+                    break;
+                case 'merged':
+                    $notice = __( 'The shared cart has been added to your cart.', 'share-cart-for-woocommerce' );
+                    break;
+                case 'unchanged':
+                    $notice = __( 'Your cart already has everything from the shared cart.', 'share-cart-for-woocommerce' );
+                    break;
+                default:
+                    $notice = __( 'The shared cart has been loaded.', 'share-cart-for-woocommerce' );
+            }
+
+            if ( $failed_coupons > 0 ) {
+                $notice .= ' ' . sprintf(
+                    /* translators: %d: number of coupons */
+                    _n( '%d coupon from the shared cart could not be applied.', '%d coupons from the shared cart could not be applied.', $failed_coupons, 'share-cart-for-woocommerce' ),
+                    $failed_coupons
+                );
+            }
 
             /**
-             * Filter the notice shown when a shared cart is loaded.
+             * Filter the notice shown when a shared cart is opened.
              *
              * @param string $notice   Notice text.
-             * @param bool   $replaced Whether the visitor's cart held other items.
+             * @param bool   $replaced Whether the shared cart replaced other items.
+             * @param string $result   What happened: 'loaded', 'replaced', 'merged' or 'unchanged'.
              */
-            $notice = (string) apply_filters( 'scurl_shared_cart_notice_text', $notice, $replaced );
+            $notice = (string) apply_filters( 'scurl_shared_cart_notice_text', $notice, 'replaced' === $result, $result );
 
             if ( '' !== $notice ) {
                 WC()->session->set( self::NOTICE_SESSION_KEY, $notice );
@@ -416,7 +787,7 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
 
         /**
          * Reload the page without the share parameter once the shared cart is
-         * in the session.
+         * in the session, or its replace or add question is waiting there.
          *
          * Left in the address bar, the parameter restored the shared cart again
          * on every refresh. WooCommerce's remove item and update cart actions
@@ -428,14 +799,16 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
          * redirect.
          */
         public static function scurl_redirect_after_shared_cart() {
-            if ( ! self::$shared_cart_applied ) {
+            if ( ! self::$reload_needed ) {
                 return;
             }
 
             $method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( sanitize_key( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) : 'GET';
 
-            // Never redirect a form submission, it would lose the posted data.
-            if ( 'GET' !== $method && 'HEAD' !== $method ) {
+            // Never redirect another form submission, it would lose the posted
+            // data. The popup's own form is reloaded as a GET, so a refresh
+            // does not post the answer again.
+            if ( 'GET' !== $method && 'HEAD' !== $method && ! self::$choice_submitted ) {
                 return;
             }
 
@@ -443,8 +816,133 @@ if ( ! class_exists( 'SCURL_Share_Cart_URL' ) ) {
             // a link that also adds a product does not add it a second time.
             $location = remove_query_arg( array( 'share', 'add-to-cart' ) );
 
-            wp_safe_redirect( wp_validate_redirect( $location, wc_get_cart_url() ) );
+            wp_safe_redirect( wp_validate_redirect( $location, wc_get_cart_url() ), self::$choice_submitted ? 303 : 302 );
             exit;
+        }
+
+        /**
+         * Take a waiting replace or add question out of the session on the page
+         * view that follows the share link, and prepare the popup.
+         *
+         * Taken once. Closing the popup, reloading or moving to another page
+         * leaves the visitor's cart as it is. Opening the link again asks again.
+         */
+        public static function scurl_take_pending_choice() {
+            if ( ! function_exists( 'WC' ) || ! WC()->session ) {
+                return;
+            }
+
+            $hash = WC()->session->get( self::PENDING_SESSION_KEY );
+
+            if ( empty( $hash ) ) {
+                return;
+            }
+
+            WC()->session->set( self::PENDING_SESSION_KEY, null );
+
+            $cart = self::scurl_read_shared_cart( (string) $hash );
+
+            if ( null === $cart || ! self::scurl_customers_can_choose() ) {
+                return;
+            }
+
+            WC()->session->set( self::ASKED_SESSION_KEY, (string) $hash );
+
+            self::$choice_popup = array(
+                'hash'  => (string) $hash,
+                'items' => self::scurl_describe_items( isset( $cart['cart'] ) ? $cart['cart'] : array() ),
+            );
+        }
+
+        /**
+         * Product names and quantities of shared cart items, for the popup.
+         *
+         * @param array $items Shared cart items.
+         * @return array List of arrays with 'name' and 'quantity'.
+         */
+        private static function scurl_describe_items( $items ) {
+            $lines = array();
+
+            foreach ( (array) $items as $item ) {
+                if ( ! is_array( $item ) || empty( $item['product_id'] ) ) {
+                    continue;
+                }
+
+                $product = wc_get_product( ! empty( $item['variation_id'] ) ? $item['variation_id'] : $item['product_id'] );
+
+                // A product deleted since the cart was shared is left out here,
+                // as WooCommerce leaves it out of the cart.
+                if ( ! $product ) {
+                    continue;
+                }
+
+                $lines[] = array(
+                    'name'     => $product->get_name(),
+                    'quantity' => isset( $item['quantity'] ) ? wc_stock_amount( $item['quantity'] ) : 1,
+                );
+            }
+
+            return $lines;
+        }
+
+        /**
+         * Print the replace or add popup in the footer.
+         *
+         * Printed visible, so it works without JavaScript: every button submits
+         * the form. With JavaScript, closing it or choosing to keep the cart
+         * just hides it, since the question has already left the session.
+         */
+        public static function scurl_render_choice_modal() {
+            if ( empty( self::$choice_popup ) ) {
+                return;
+            }
+
+            $hash  = self::$choice_popup['hash'];
+            $items = self::$choice_popup['items'];
+            $shown = array_slice( $items, 0, 10 );
+            $more  = count( $items ) - count( $shown );
+            ?>
+            <div class="scurl-email-modal scurl-choice-modal" id="scurl-choice-modal">
+                <div class="scurl-email-backdrop" data-scurl-close></div>
+                <div class="scurl-email-dialog" role="dialog" aria-modal="true" aria-labelledby="scurl-choice-title" aria-describedby="scurl-choice-question">
+                    <button type="button" class="scurl-email-close" data-scurl-close aria-label="<?php esc_attr_e( 'Close', 'share-cart-for-woocommerce' ); ?>">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                            <path d="M18 6 6 18"></path>
+                            <path d="m6 6 12 12"></path>
+                        </svg>
+                    </button>
+                    <h2 class="scurl-email-title" id="scurl-choice-title"><?php esc_html_e( 'Open shared cart', 'share-cart-for-woocommerce' ); ?></h2>
+                    <?php if ( ! empty( $shown ) ) : ?>
+                        <p class="scurl-email-intro"><?php esc_html_e( 'This link contains:', 'share-cart-for-woocommerce' ); ?></p>
+                        <ul class="scurl-choice-items">
+                            <?php foreach ( $shown as $line ) : ?>
+                                <li><?php echo esc_html( $line['name'] ); ?> &times; <?php echo esc_html( $line['quantity'] ); ?></li>
+                            <?php endforeach; ?>
+                            <?php if ( $more > 0 ) : ?>
+                                <li>
+                                    <?php
+                                    /* translators: %d: number of further items in the shared cart */
+                                    echo esc_html( sprintf( _n( 'and %d more item', 'and %d more items', $more, 'share-cart-for-woocommerce' ), $more ) );
+                                    ?>
+                                </li>
+                            <?php endif; ?>
+                        </ul>
+                    <?php endif; ?>
+                    <p class="scurl-email-intro" id="scurl-choice-question"><?php esc_html_e( 'You already have items in your cart. What would you like to do?', 'share-cart-for-woocommerce' ); ?></p>
+                    <form class="scurl-choice-form" method="post" action="<?php echo esc_url( remove_query_arg( array( 'share', 'add-to-cart' ) ) ); ?>">
+                        <input type="hidden" name="scurl_share" value="<?php echo esc_attr( $hash ); ?>" />
+                        <input type="hidden" name="scurl_choice_nonce" value="<?php echo esc_attr( wp_create_nonce( self::NONCE_ACTION . '-choice-' . $hash ) ); ?>" />
+                        <p class="scurl-choice-actions">
+                            <button type="submit" class="button scurl-choice-btn" name="scurl_share_choice" value="replace"><?php esc_html_e( 'Replace my cart', 'share-cart-for-woocommerce' ); ?></button>
+                            <button type="submit" class="button scurl-choice-btn" name="scurl_share_choice" value="add"><?php esc_html_e( 'Add to my cart', 'share-cart-for-woocommerce' ); ?></button>
+                        </p>
+                        <p class="scurl-choice-keep-row">
+                            <button type="submit" class="scurl-choice-keep" name="scurl_share_choice" value="keep" data-scurl-close><?php esc_html_e( 'Keep my current cart', 'share-cart-for-woocommerce' ); ?></button>
+                        </p>
+                    </form>
+                </div>
+            </div>
+            <?php
         }
 
         /**

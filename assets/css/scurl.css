@@ -359,6 +359,68 @@ body.scurl-email-open {
     opacity: 1;
 }
 
+/* ---------------------------------------------------------------------------
+   "Replace or add" popup. It reuses the email popup's frame above
+   (.scurl-email-modal, -backdrop, -dialog, -close, -title, -intro), so only
+   its own parts are styled here.
+   ------------------------------------------------------------------------ */
+.scurl-choice-modal .scurl-choice-items {
+    margin: 0 0 16px;
+    padding: 0 0 0 20px;
+    font-size: 14px;
+}
+
+.scurl-choice-modal .scurl-choice-items li {
+    margin: 0 0 4px;
+}
+
+.scurl-choice-modal .scurl-choice-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 12px;
+}
+
+.scurl-choice-modal .scurl-choice-keep-row {
+    margin: 0;
+}
+
+/* A button, so it submits without JavaScript, styled as a link. */
+.scurl-choice-modal button.scurl-choice-keep {
+    -webkit-appearance: none;
+    appearance: none;
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    color: inherit;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.4;
+    letter-spacing: normal;
+    text-transform: none;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+    opacity: 0.75;
+}
+
+.scurl-choice-modal button.scurl-choice-keep:hover,
+.scurl-choice-modal button.scurl-choice-keep:focus {
+    background: transparent;
+    color: inherit;
+    opacity: 1;
+}
+
+.scurl-choice-modal button.scurl-choice-keep:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+}
+
 .scurl-email-modal button.scurl-email-close svg {
     display: block;
     width: 18px;

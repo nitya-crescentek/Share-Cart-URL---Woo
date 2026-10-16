@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Share Cart for WooCommerce
  * Description: Share Cart URL for WooCommerce enables customers to share their cart URL directly from the WooCommerce cart page.
- * Version: 1.4
+ * Version: 1.5
  * Author: Nitya Saha
  * Author URI: https://nitya.codesocials.com
  * Text Domain: share-cart-for-woocommerce
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     die( esc_html__( "No direct access!", 'share-cart-for-woocommerce' ) );
 }
 
-define( 'SCURL_VERSION', '1.4');
+define( 'SCURL_VERSION', '1.5');
 define( 'SCURL_PLUGIN_FILE', __FILE__ );
 // Kept for backward compatibility. Despite the name, this is a URL, not a path.
 define( 'SCURL_PLUGIN_PATH', plugin_dir_url(__FILE__) );
@@ -111,6 +111,14 @@ if ( ! class_exists( 'SCURL_Main' ) ) {
 
             if ( false === get_option( 'scurl_shared_cart_notice' ) ) {
                 update_option( 'scurl_shared_cart_notice', 'yes' );
+            }
+
+            if ( false === get_option( 'scurl_shared_cart_choice' ) ) {
+                update_option( 'scurl_shared_cart_choice', 'no' );
+            }
+
+            if ( false === get_option( 'scurl_shared_cart_merge_qty' ) ) {
+                update_option( 'scurl_shared_cart_merge_qty', 'larger' );
             }
 
             // Add settings link on the plugins page.
